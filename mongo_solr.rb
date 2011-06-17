@@ -4,54 +4,75 @@ require "mongo"
 require "set"
 
 module MongoSolr
-  # TODO:
-  # - Deal with embedded documents
-  # - MongoDB db & collection namespace to Solr namespace translation
+  # A simple class utility for indexing an entire MongoDB database contents (excluding
+  # administrative collections) to Solr.
   class SolrSynchronizer
     MONGO_DEFAULT_PORT = 27017
 
-    # @param solr_server_loc [String] location of the Solr server to populate the database documents
+    # Create a synchronizer instance.
+    #
+    # @param solr [String, RSolr::Client] location of the Solr server to populate the database
+    #   documents. Can also pass an instance of a RSolr::Client
     # @param mongoloc [String] location of the mongod
-    # @param options [?Hash] additional options. List of the recognized keys:
-    #   :mongo_port [number] => the port to use when connecting to the mongo server, uses
-    #     MONGO_DEFAULT_PORT when not specified
-    #   :is_master_slave [boolean] => true if the mongo server is running on master/slave mode
-    #  
+    #
+    # @option options [number] :mongo_port (SolrSynchronizer::MONGO_DEFAULT_PORT) 
+    #   the port to use when connecting to the mongo server
+    # @option options [Symbol] :mode (:normal) accepted symbols - :normal (not supported),
+    #   :master_slave, :repl_set
+    # @option options [Hash] :db_connection_opt ({}) Options to pass to the MongoDB connection
+    #
+    # @raise [RuntimeError] when mode is set to :normal
+    #
     # Examples:
-    #  solr = MongoSolr::SolrSynchronizer.new("http://localhost:8983/solr", "localhost")
     #  solr = MongoSolr::SolrSynchronizer.new("http://localhost:8983/solr", "localhost",
-    #    { :mongo_port => 27017, is_master_slave => false })
-    def initialize(solr_server_loc, mongo_loc, options)
-      @solr = RSolr.connect :url => solr_server_loc
+    #    { :mode => repl_set })
+    #  solr = MongoSolr::SolrSynchronizer.new(RSolr.connect(:url => "http://localhost:8983/solr"),
+    #    "localhost", { :mongo_port => 27017, :mode => master_slave })
+    def initialize(solr, mongo_loc, options)
+      if solr.is_a? RSolr::Client then
+        @solr = solr
+      else
+        @solr = RSolr.connect :url => solr
+      end
 
       if options.nil? then
         mongo_port = MONGO_DEFAULT_PORT
-        is_master_slave = false
+        mode = :normal
       else
         mongo_port = options[:mongo_port] || MONGO_DEFAULT_PORT
-        is_master_slave = options[:is_master_slave] || false
+        mode = options[:mode] || :normal
       end
 
-      if is_master_slave then
+      case mode
+      when :normal
+        raise "Normal mode not supported, please setup your datebase to run on master/slave " +
+          "or replica set configuration"
+      when :master_slave
         oplog_db_name = "local"
         oplog_collection = "oplog.$main"
-      else
-        # TODO: for replica sets
+      when :repl_set
         oplog_db_name = "local"
-        oplog_collection = "oplog.$main"
+        oplog_collection = "oplog.rs"
       end
 
-      @db = Mongo::Connection.new(mongo_loc, mongo_port)
-      @oplog_collection = @db.db(oplog_db_name).collection(oplog_collection)
+      @db_connection = Mongo::Connection.new(mongo_loc, mongo_port)
+      @oplog_collection = @db_connection.db(oplog_db_name).collection(oplog_collection)
     end
 
-    # Synchronizes the database contents with Solr
+    # Continuously synchronizes the database contents with Solr. Please note that this is a
+    # blocking call that contains an infinite loop.
     #
-    # @param interval [number] The interval in seconds to wait before checking for new updates
+    # @param interval [number] (1) The interval in seconds to wait before checking for new updates
     def sync(interval = 1)
-      dump_db_contents
+      cursor = Mongo::Cursor.new(@oplog_collection,
+                                 { :tailable => true, :selector => {"op" => {"$ne" => "n"} } })
 
-      cursor = Mongo::Cursor.new(@oplog_collection, :tailable => true)
+      # Go to the tail of cursor. Must find a better way moving the cursor to the latest entry.
+      while cursor.next_document do
+        # Do nothing
+      end
+
+      dump_db_contents
 
       loop do
         doc_batch = []
@@ -67,10 +88,34 @@ module MongoSolr
 
     ############################################################################
     private
+
+    # Dump the all contents of the MongoDB server to be indexed to Solr.
+    # Assumption: no authentication is required to access the databases.
     def dump_db_contents
-      # TODO: implement
+      @db_connection.database_names.each do |db_name|
+        unless db_name == "local" or db_name == "admin" then
+          db = @db_connection.db(db_name)
+
+          db.collection_names.each do |collection_name|
+            unless collection_name == "system.indexes" then
+#              puts "dumping #{db_name}.#{collection_name}..."
+
+              db.collection(collection_name).find().each do |doc|
+                @solr.add(doc)
+              end
+            end
+          end
+        end
+      end
+
+      @solr.commit
     end
 
+    # Synchronize the contents of the database to Solr by applying the operations
+    # in the oplog.
+    #
+    # @param oplog_doc_entries [Array<Object>] An array of Mongo documents containing
+    #   the oplog entries to apply.
     def update_solr(oplog_doc_entries)
       update_list = {}
 
@@ -80,17 +125,21 @@ module MongoSolr
 
         case oplog_entry["op"]
         when "i" then
-          puts "adding #{doc.inspect}"
+#          puts "adding #{doc.inspect}"
           @solr.add(doc)
 
         when "u" then
-          # Batch the documents that needs a new update to minimize DB roundtrips
+          # Batch the documents that needs a new update to minimize DB roundtrips.
+          # The reason for querying the DB is because there is no update operation for Solr
+          # (and also no way to modify a field), only replacing an existing entry with a new
+          # one. Since the oplog only contains the diff operation, we need to fetch the 
+          # latest content from the DB.
           to_update = update_list[namespace] ||= Set.new
           to_update << oplog_entry["o2"]["_id"]
 
         when "d" then
-          # Remove entry in the update_list since there is no update operation for Solr,
-          # only replacing an existing entry with a new one
+          # Remove entry in the update_list to avoid it from magically reappearing (from Solr
+          # point of view) after deletion.
           to_update = update_list[namespace] ||= Set.new
           id = oplog_entry["o"]["_id"]
           to_update.delete(id)
@@ -106,7 +155,13 @@ module MongoSolr
       end
 
       update_list.each do |namespace, id_list|
-        id_list.to_a
+        ns_split = namespace.split(".")
+        database = ns_split.first
+        collection = ns_split[1]
+
+        to_update = @db_connection.db(database).collection(collection).
+          find({"_id" => {"$in" => id_list.to_a}})
+        @solr.add(to_update.to_a)
       end
 
       @solr.commit
