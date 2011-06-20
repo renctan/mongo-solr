@@ -1,7 +1,0 @@
-A simple class utility for indexing an entire MongoDB database contents (excluding
-administrative collections) to Solr.
-
-TODO:
-
- - Deal with embedded documents
- - Support DB authentication?

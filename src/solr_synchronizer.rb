@@ -2,6 +2,8 @@ require "rubygems"
 require "rsolr"
 require "mongo"
 require "set"
+require_relative "document_transform"
+require_relative "exception"
 
 module MongoSolr
   # A simple class utility for indexing an entire MongoDB database contents (excluding
@@ -11,52 +13,32 @@ module MongoSolr
 
     # Create a synchronizer instance.
     #
-    # @param solr [String, RSolr::Client] location of the Solr server to populate the database
-    #   documents. Can also pass an instance of a RSolr::Client
-    # @param mongoloc [String] location of the mongod
+    # @param solr [RSolr::Client] The client to the Solr server to populate database documents.
+    # @param mongo_connection [Mongo::Connection] The connection to the database to synchronize.
     #
-    # @option options [number] :mongo_port (SolrSynchronizer::MONGO_DEFAULT_PORT) 
-    #   the port to use when connecting to the mongo server
-    # @option options [Symbol] :mode (:normal) accepted symbols - :normal (not supported),
-    #   :master_slave, :repl_set
-    # @option options [Hash] :db_connection_opt ({}) Options to pass to the MongoDB connection
+    # @raise [OplogNotFoundException]
     #
-    # @raise [RuntimeError] when mode is set to :normal
-    #
-    # Examples:
-    #  solr = MongoSolr::SolrSynchronizer.new("http://localhost:8983/solr", "localhost",
-    #    { :mode => repl_set })
-    #  solr = MongoSolr::SolrSynchronizer.new(RSolr.connect(:url => "http://localhost:8983/solr"),
-    #    "localhost", { :mongo_port => 27017, :mode => master_slave })
-    def initialize(solr, mongo_loc, options)
-      if solr.is_a? RSolr::Client then
-        @solr = solr
-      else
-        @solr = RSolr.connect :url => solr
+    # Example:
+    #  mongo = Mongo::Connection.new("localhost", 27017)
+    #  solr_client = RSolr.connect(:url => "http://localhost:8983/solr")
+    #  solr = MongoSolr::SolrSynchronizer.new(solr_client, mongo)
+    def initialize(solr, mongo_connection)
+      @solr = solr
+      @db_connection = mongo_connection
+
+      oplog_db_name = "local"
+
+      oplog_collections = @db_connection.db(oplog_db_name).collection_names.reject do |x|
+        (x != "oplog.rs" && x != "oplog.$main")
       end
 
-      if options.nil? then
-        mongo_port = MONGO_DEFAULT_PORT
-        mode = :normal
-      else
-        mongo_port = options[:mongo_port] || MONGO_DEFAULT_PORT
-        mode = options[:mode] || :normal
+      if oplog_collections.empty? then
+        raise OplogNotFoundException, "Cannot find oplog collection. Make sure that " +
+          "you are connected to a server running on master/slave or replica set configuration."
       end
 
-      case mode
-      when :normal
-        raise "Normal mode not supported, please setup your datebase to run on master/slave " +
-          "or replica set configuration"
-      when :master_slave
-        oplog_db_name = "local"
-        oplog_collection = "oplog.$main"
-      when :repl_set
-        oplog_db_name = "local"
-        oplog_collection = "oplog.rs"
-      end
-
-      @db_connection = Mongo::Connection.new(mongo_loc, mongo_port)
-      @oplog_collection = @db_connection.db(oplog_db_name).collection(oplog_collection)
+      oplog_collection_name = oplog_collections.first
+      @oplog_collection = @db_connection.db(oplog_db_name).collection(oplog_collection_name)
     end
 
     # Continuously synchronizes the database contents with Solr. Please note that this is a
@@ -78,6 +60,7 @@ module MongoSolr
         doc_batch = []
 
         while doc = cursor.next_document do
+          puts "new doc @ oplog: #{doc}"
           doc_batch << doc
         end
 
@@ -98,10 +81,10 @@ module MongoSolr
 
           db.collection_names.each do |collection_name|
             unless collection_name == "system.indexes" then
-#              puts "dumping #{db_name}.#{collection_name}..."
+              puts "dumping #{db_name}.#{collection_name}..."
 
               db.collection(collection_name).find().each do |doc|
-                @solr.add(doc)
+                @solr.add(DocumentTransform.translate_doc(doc))
               end
             end
           end
@@ -126,7 +109,7 @@ module MongoSolr
         case oplog_entry["op"]
         when "i" then
 #          puts "adding #{doc.inspect}"
-          @solr.add(doc)
+          @solr.add(DocumentTransform.translate_doc(doc))
 
         when "u" then
           # Batch the documents that needs a new update to minimize DB roundtrips.
@@ -161,7 +144,7 @@ module MongoSolr
 
         to_update = @db_connection.db(database).collection(collection).
           find({"_id" => {"$in" => id_list.to_a}})
-        @solr.add(to_update.to_a)
+        to_update.each { @solr.add(DocumentTransform.translate_doc(doc)) }
       end
 
       @solr.commit
