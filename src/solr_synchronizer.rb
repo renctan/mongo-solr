@@ -15,30 +15,34 @@ module MongoSolr
     #
     # @param solr [RSolr::Client] The client to the Solr server to populate database documents.
     # @param mongo_connection [Mongo::Connection] The connection to the database to synchronize.
+    # @param mode [Symbol] Mode of the MongoDB server connected to. Accepted symbols - :repl_set,
+    #   :master_slave
     #
     # @raise [OplogNotFoundException]
     #
     # Example:
     #  mongo = Mongo::Connection.new("localhost", 27017)
     #  solr_client = RSolr.connect(:url => "http://localhost:8983/solr")
-    #  solr = MongoSolr::SolrSynchronizer.new(solr_client, mongo)
-    def initialize(solr, mongo_connection)
+    #  solr = MongoSolr::SolrSynchronizer.new(solr_client, mongo, :master_slave)
+    def initialize(solr, mongo_connection, mode)
       @solr = solr
       @db_connection = mongo_connection
+      oplog_db = @db_connection.db("local")
 
-      oplog_db_name = "local"
+      oplog_collection_name = case mode
+                              when :master_slave then "oplog.$main"
+                              when :repl_set then "oplog.rs"
+                              else ""
+                              end
 
-      oplog_collections = @db_connection.db(oplog_db_name).collection_names.reject do |x|
-        (x != "oplog.rs" && x != "oplog.$main")
-      end
-
-      if oplog_collections.empty? then
+      begin
+        oplog_db.validate_collection(oplog_collection_name)
+      rescue
         raise OplogNotFoundException, "Cannot find oplog collection. Make sure that " +
           "you are connected to a server running on master/slave or replica set configuration."
       end
 
-      oplog_collection_name = oplog_collections.first
-      @oplog_collection = @db_connection.db(oplog_db_name).collection(oplog_collection_name)
+      @oplog_collection = oplog_db.collection(oplog_collection_name)
     end
 
     # Continuously synchronizes the database contents with Solr. Please note that this is a
@@ -60,7 +64,6 @@ module MongoSolr
         doc_batch = []
 
         while doc = cursor.next_document do
-          puts "new doc @ oplog: #{doc}"
           doc_batch << doc
         end
 
