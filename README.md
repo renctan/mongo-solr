@@ -11,5 +11,5 @@ A simple Ruby script for indexing the entire contents of a MongoDB instance (exc
   gem install rsolr mongo
 
 ## For running tests:
-  gem install shoulda
+  gem install shoulda mocha
 
