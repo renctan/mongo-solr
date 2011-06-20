@@ -49,7 +49,11 @@ module MongoSolr
     # blocking call that contains an infinite loop.
     #
     # @param interval [number] (1) The interval in seconds to wait before checking for new updates
-    def sync(interval = 1)
+    # @param block [Proc(mode, doc_count)] A procedure that will be called during certain conditions:
+    #   1. block(:finished_dumping, 0) will be called after dumping the contents of the database.
+    #   2. block(:sync, doc_count) will be called everytime Solr is updated from the oplog.
+    #      doc_count contains the number of docs synched with Solr so far.
+    def sync(interval = 1, &block)
       cursor = Mongo::Cursor.new(@oplog_collection,
                                  { :tailable => true, :selector => {"op" => {"$ne" => "n"} } })
 
@@ -59,15 +63,20 @@ module MongoSolr
       end
 
       dump_db_contents
+      yield :finished_dumping, 0
 
+      doc_count = 0
       loop do
         doc_batch = []
 
         while doc = cursor.next_document do
           doc_batch << doc
+          doc_count += 1
         end
 
         update_solr(doc_batch)
+        yield :sync, doc_count
+
         sleep interval
       end
     end
@@ -84,7 +93,7 @@ module MongoSolr
 
           db.collection_names.each do |collection_name|
             unless collection_name == "system.indexes" then
-              puts "dumping #{db_name}.#{collection_name}..."
+#              puts "dumping #{db_name}.#{collection_name}..."
 
               db.collection(collection_name).find().each do |doc|
                 @solr.add(DocumentTransform.translate_doc(doc))
