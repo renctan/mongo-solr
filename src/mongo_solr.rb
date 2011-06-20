@@ -1,6 +1,6 @@
 #! /usr/local/bin/ruby
 
-require_relative "mongo_solr"
+require_relative "solr_synchronizer"
 
 if $0 == __FILE__ then
   SOLR_SERVER = "http://localhost:8983/solr"
