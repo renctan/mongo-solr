@@ -97,8 +97,12 @@ module MongoSolr
         doc_batch = []
 
         while doc = cursor.next_document do
-          doc_batch << doc
-          doc_count += 1
+          unless filter_entry?(doc["ns"]) then
+            doc_batch << doc
+            doc_count += 1
+          else
+            puts "skipped oplog: #{doc}"
+          end
         end
 
         update_solr(doc_batch)
@@ -111,6 +115,7 @@ module MongoSolr
     ############################################################################
     private
     SPECIAL_PURPOSE_MONGO_DB_NAME_PATTERN = /^(local|admin|config)$/
+    SPECIAL_COLLECTION_NAME_PATTERN = /^system\./
 
     # Dump the all contents of the MongoDB server (with the exception of special purpose
     # databases like admin and config) to be indexed to Solr. If db_pass is not empty, only
@@ -143,7 +148,7 @@ module MongoSolr
     # @param db [Mongo::DB] The database instance to dump.
     def dump_collections(db)
       db.collection_names.each do |collection_name|
-        unless collection_name =~ /^system\./ then
+        unless collection_name =~ SPECIAL_COLLECTION_NAME_PATTERN then
 #          puts "dumping #{db.name}.#{collection_name}..."
 
           db.collection(collection_name).find().each do |doc|
@@ -223,6 +228,24 @@ module MongoSolr
       else
         @db_connection.db(db_name).authenticate(auth[:user], auth[:pwd], true)
         true
+      end
+    end
+
+    # Helper method for determining whether to apply the oplog entry changes to Solr.
+    #
+    # @param namespace [String] The ns field in the oplog entry.
+    #
+    # @return [Boolean] true if the oplog entry should be skipped.
+    def filter_entry?(namespace)
+      split = namespace.split(".")
+      db_name = split.first
+
+      if db_name =~ SPECIAL_PURPOSE_MONGO_DB_NAME_PATTERN then
+        return true
+      else
+        split.delete_at 0
+        collection_name = split.join(".")
+        return !(collection_name =~ SPECIAL_COLLECTION_NAME_PATTERN).nil?
       end
     end
   end
