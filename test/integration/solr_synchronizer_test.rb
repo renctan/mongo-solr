@@ -8,6 +8,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
   TEST_DB = "MongoSolrSynchronizerIntegrationTestDB"
   TEST_DB_2 = "#{TEST_DB}_2"
   MODE = :master_slave
+  DEFAULT_LOGGER = Logger.new("/dev/null")
 
   context "basic test" do
     setup do
@@ -33,11 +34,14 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       @solr.expects(:add).times(3)
       @solr.expects(:commit).once
       solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE)
+      solr.logger = DEFAULT_LOGGER
       solr.sync { return }
     end
 
     should "update db insertions to solr after dumping" do
       solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE)
+      solr.logger = DEFAULT_LOGGER
+
       @solr.expects(:add).at_most_once
       @solr.expects(:commit).twice # during and after dump
 
@@ -52,6 +56,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
     should "update multiple db insertions to solr after dumping" do
       solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE)
+      solr.logger = DEFAULT_LOGGER
+
       @solr.expects(:add).twice
       @solr.expects(:commit).times(2..3) # during and after dump
 
@@ -69,6 +75,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       @test_coll1.insert({ "msg" => "Hello world!" })
 
       solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE)
+      solr.logger = DEFAULT_LOGGER
+
       @solr.expects(:add).twice
       @solr.expects(:commit).twice # during and after dump
 
@@ -85,6 +93,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       @test_coll1.insert({ "msg" => "Hello world!" })
 
       solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE)
+      solr.logger = DEFAULT_LOGGER
+
       @solr.stubs(:add)
       @solr.expects(:delete_by_id).once
       @solr.expects(:commit).at_least(2) # during and after dump
@@ -102,6 +112,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       @test_coll1.insert({ "msg" => "Hello world!" })
 
       solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE)
+      solr.logger = DEFAULT_LOGGER
+
       @solr.expects(:add).at_most(3)
       @solr.expects(:delete_by_id).once
       @solr.expects(:commit).times(2..4) # during and after dump
@@ -153,6 +165,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
     should "be able to access contents that needs authentication with the admin account" do
       solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE)
+      solr.logger = DEFAULT_LOGGER
+
       @test_coll.insert({ "msg" => "Hello world!" })
 
       @solr.expects(:add).once
@@ -163,6 +177,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
     should "be able to update contents authentication with the admin account after dump" do
       solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE)
+      solr.logger = DEFAULT_LOGGER
+
       @solr.expects(:add).once
       @solr.expects(:commit).twice # during and after dump
 
@@ -177,6 +193,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
     should "be able to access contents that needs authentication with individual db" do
       solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE)
+      solr.logger = DEFAULT_LOGGER
+
       @test_coll.insert({ "msg" => "Hello world!" })
 
       @solr.expects(:add).once
@@ -187,6 +205,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
     should "be able to update contents authentication with individual db after dump" do
       solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE)
+      solr.logger = DEFAULT_LOGGER
+
       @solr.expects(:add).once
       @solr.expects(:commit).twice # during and after dump
 

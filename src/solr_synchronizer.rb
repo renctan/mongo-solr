@@ -2,6 +2,8 @@ require "rubygems"
 require "rsolr"
 require "mongo"
 require "set"
+require "logger"
+
 require_relative "document_transform"
 require_relative "exception"
 
@@ -9,6 +11,9 @@ module MongoSolr
   # A simple class utility for indexing an entire MongoDB database contents (excluding
   # administrative collections) to Solr.
   class SolrSynchronizer
+    # [Logger] Set the logger to be used to output. Defaults to STDOUT.
+    attr_writer :logger
+
     # Create a synchronizer instance.
     #
     # @param solr [RSolr::Client] The client to the Solr server to populate database documents.
@@ -28,6 +33,8 @@ module MongoSolr
                                when :repl_set then "oplog.rs"
                                else ""
                                end
+
+      @logger = Logger.new(STDOUT)
     end
 
     # Continuously synchronizes the database contents with Solr. Please note that this is a
@@ -101,7 +108,7 @@ module MongoSolr
             doc_batch << doc
             doc_count += 1
           else
-            puts "skipped oplog: #{doc}"
+            @logger.debug "skipped oplog: #{doc}"
           end
         end
 
@@ -149,7 +156,7 @@ module MongoSolr
     def dump_collections(db)
       db.collection_names.each do |collection_name|
         unless collection_name =~ SPECIAL_COLLECTION_NAME_PATTERN then
-#          puts "dumping #{db.name}.#{collection_name}..."
+          @logger.info "dumping #{db.name}.#{collection_name}..."
 
           db.collection(collection_name).find().each do |doc|
             @solr.add(DocumentTransform.translate_doc(doc))
@@ -172,7 +179,7 @@ module MongoSolr
 
         case oplog_entry["op"]
         when "i" then
-#          puts "adding #{doc.inspect}"
+          @logger.info "adding #{doc.inspect}"
           @solr.add(DocumentTransform.translate_doc(doc))
 
         when "u" then
@@ -191,13 +198,14 @@ module MongoSolr
           id = oplog_entry["o"]["_id"]
           to_update.delete(id)
 
+          @logger.info "deleting #{doc.inspect}"
           @solr.delete_by_id id
 
         when "n" then
           # NOOP: do nothing
 
         else
-          puts "ERROR: unrecognized operation in oplog entry: #{oplog_entry.inspect}"
+          @logger.error "Unrecognized operation in oplog entry: #{oplog_entry.inspect}"
         end
       end
 
@@ -208,7 +216,11 @@ module MongoSolr
 
         to_update = @db_connection.db(database).collection(collection).
           find({"_id" => {"$in" => id_list.to_a}})
-        to_update.each { |doc| @solr.add(DocumentTransform.translate_doc(doc)) }
+
+        to_update.each do |doc|
+          @logger.info "updating #{doc.inspect}"
+          @solr.add(DocumentTransform.translate_doc(doc))
+        end
       end
 
       @solr.commit

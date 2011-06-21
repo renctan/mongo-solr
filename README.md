@@ -29,4 +29,6 @@ The integration test uses the following assumptions:
 2. The database server is running on a master slave configuration.
 3. There is no admin user registered on the database.
 4. The database server is running with security mode on (by passing the --auth option).
+5. The test sets the output of the logger to "/dev/null" so the system running it should be able
+   to understand it.
 
