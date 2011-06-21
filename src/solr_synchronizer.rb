@@ -156,7 +156,7 @@ module MongoSolr
 
         to_update = @db_connection.db(database).collection(collection).
           find({"_id" => {"$in" => id_list.to_a}})
-        to_update.each { @solr.add(DocumentTransform.translate_doc(doc)) }
+        to_update.each { |doc| @solr.add(DocumentTransform.translate_doc(doc)) }
       end
 
       @solr.commit
