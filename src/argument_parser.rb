@@ -7,9 +7,10 @@ module MongoSolr
     # Parses the command line options.
     #
     # @param args [Array] The ARGV array.
+    # @param block [Proc(OptionParser, OpenStruct)] An optional block 
     #
     # @return [OpenStruct] the option structure that contains the options.
-    def self.parse_options(args)
+    def self.parse_options(args, &block)
       # Initialize all parameters here.
       options = OpenStruct.new
       options.solr_server = "http://localhost:8983/solr"
@@ -37,7 +38,8 @@ module MongoSolr
         end
 
         opts.separator ""
-        opts.on("-p", "--mport PORT_NUMBER", "The port number of the MongoDB server.",
+        opts.on("-p", "--mport PORT_NUMBER", Integer,
+                "The port number of the MongoDB server.",
                 "Defaults to #{options.mongo_port}.") do |port_num|
           options.mongo_port = port_num
         end
@@ -53,7 +55,8 @@ module MongoSolr
         end
 
         opts.separator ""
-        opts.on("-i", "--interval SECONDS", "The number of seconds to wait before",
+        opts.on("-i", "--interval SECONDS", Float,
+                "The number of seconds to wait before",
                 "polling the oplog for more updates.",
                 "Does not need to be an integer,",
                 "but must be >= 1. Defaults to #{options.interval}.") do |seconds|
@@ -80,6 +83,8 @@ module MongoSolr
                 "character.") do |path|
           options.auth = load_auth_file(path)
         end
+
+        yield opts, options
 
         opts.separator ""
         opts.on_tail("-h", "--help", "Show this message") do
