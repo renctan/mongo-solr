@@ -84,7 +84,7 @@ module MongoSolr
           options.auth = load_auth_file(path)
         end
 
-        yield opts, options
+        yield opts, options if block_given?
 
         opts.separator ""
         opts.on_tail("-h", "--help", "Show this message") do
