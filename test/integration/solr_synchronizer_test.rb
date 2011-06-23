@@ -35,7 +35,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       @solr.expects(:commit).once
       solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE)
       solr.logger = DEFAULT_LOGGER
-      solr.sync { return }
+      solr.sync { break }
     end
 
     should "update db insertions to solr after dumping" do
@@ -49,7 +49,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         if mode == :finished_dumping then
           @test_coll1.insert({ "msg" => "Hello world!" })
         elsif mode == :sync then
-          return
+          break
         end
       end
     end
@@ -66,7 +66,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
           @test_coll1.insert({ "msg" => "Hello world!" })
           @test_coll2.insert({ "author" => "Matz" })
         elsif mode == :sync and doc_count >= 2 then
-          return
+          break
         end
       end
     end
@@ -84,7 +84,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         if mode == :finished_dumping then
           @test_coll1.update({ "msg" => "Hello world!" }, {"$set" => {"from" => "Tim Berners"}})
         elsif mode == :sync then
-          return
+          break
         end
       end
     end
@@ -103,7 +103,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         if mode == :finished_dumping then
           @test_coll1.remove({ "msg" => "Hello world!" })
         elsif mode == :sync then
-          return
+          break
         end
       end
     end
@@ -124,7 +124,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
           @test_coll1.remove({ "msg" => "Hello world!" })
           @test_coll1.insert({ "lang" => "Ruby" })
         elsif mode == :sync and doc_count >= 3 then
-          return
+          break
         end
       end
     end
@@ -172,7 +172,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       @solr.expects(:add).once
       @solr.expects(:commit).once
 
-      solr.sync(:db_pass => @admin_auth) { return }
+      solr.sync(:db_pass => @admin_auth) { break }
     end
 
     should "be able to update contents authentication with the admin account after dump" do
@@ -186,7 +186,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         if mode == :finished_dumping then
           @test_coll.insert({ "msg" => "Hello world!" })
         elsif mode == :sync then
-          return
+          break
         end
       end
     end
@@ -200,7 +200,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       @solr.expects(:add).once
       @solr.expects(:commit).once
 
-      solr.sync(:db_pass => @normal_auth) { return }
+      solr.sync(:db_pass => @normal_auth) { break }
     end
 
     should "be able to update contents authentication with individual db after dump" do
@@ -214,7 +214,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         if mode == :finished_dumping then
           @test_coll.insert({ "msg" => "Hello world!" })
         elsif mode == :sync then
-          return
+          break
         end
       end
     end
