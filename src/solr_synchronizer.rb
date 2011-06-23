@@ -28,12 +28,7 @@ module MongoSolr
     def initialize(solr, mongo_connection, mode)
       @solr = solr
       @db_connection = mongo_connection
-      @oplog_collection_name = case mode
-                               when :master_slave then "oplog.$main"
-                               when :repl_set then "oplog.rs"
-                               else ""
-                               end
-
+      @mode = mode
       @logger = Logger.new(STDOUT)
     end
 
@@ -54,7 +49,7 @@ module MongoSolr
     #   2. block(:sync, doc_count) will be called everytime Solr is updated from the oplog.
     #      doc_count contains the number of docs synched with Solr so far.
     #
-    # @raise [OplogNotFoundException]
+    # @raise [OplogException]
     #
     # Example:
     # auth = { "users" => { :user => "root", :pwd => "root" },
@@ -71,16 +66,7 @@ module MongoSolr
         db_pass.delete("local")
       end
 
-      begin
-        oplog_db = @db_connection.db("local")
-        oplog_db.validate_collection(@oplog_collection_name)
-      rescue
-        raise OplogNotFoundException, "Cannot find oplog collection. Make sure that " +
-          "you are connected to a server running on master/slave or replica set configuration."
-      end
-
-      oplog_collection = oplog_db.collection(@oplog_collection_name)
-      cursor = Mongo::Cursor.new(oplog_collection,
+      cursor = Mongo::Cursor.new(get_oplog_collection,
                                  { :tailable => true, :selector => {"op" => {"$ne" => "n"} } })
 
       # Go to the tail of cursor. Must find a better way moving the cursor to the latest entry.
@@ -123,6 +109,12 @@ module MongoSolr
     private
     SPECIAL_PURPOSE_MONGO_DB_NAME_PATTERN = /^(local|admin|config)$/
     SPECIAL_COLLECTION_NAME_PATTERN = /^system\./
+    MASTER_SLAVE_OPLOG_COLL_NAME = "oplog.$main"
+    REPL_SET_OPLOG_COLL_NAME = "oplog.rs"
+    OPLOG_NOT_FOUND_MSG = "Cannot find oplog collection. Make sure that " +
+      "you are connected to a server running on master/slave or replica set configuration."
+    OPLOG_AMBIGUOUS_MSG = "Cannot determine which oplog to use. Please specify " +
+      "the appropriate mode."
 
     # Dump the all contents of the MongoDB server (with the exception of special purpose
     # databases like admin and config) to be indexed to Solr. If db_pass is not empty, only
@@ -259,6 +251,61 @@ module MongoSolr
         collection_name = split.join(".")
         return !(collection_name =~ SPECIAL_COLLECTION_NAME_PATTERN).nil?
       end
+    end
+
+    # @return [Mongo::Collection] the oplog collection
+    #
+    # @raise [OplogException]
+    def get_oplog_collection
+      oplog_coll = nil
+      oplog_collection_name = case @mode
+                              when :master_slave then MASTER_SLAVE_OPLOG_COLL_NAME
+                              when :repl_set then REPL_SET_OPLOG_COLL_NAME
+                              else ""
+                              end
+
+      oplog_db = @db_connection.db("local")
+
+      if oplog_collection_name.empty? then
+        # Try to figure out which collection exists in the database
+        candidate_coll_names = []
+
+        begin
+          @mode = :master_slave
+          get_oplog_collection
+        rescue OplogException
+          # Do nothing
+        else
+          candidate_coll_names << MASTER_SLAVE_OPLOG_COLL_NAME
+        end
+
+        begin
+          @mode = :repl_set
+          get_oplog_collection
+        rescue OplogException
+          # Do nothing
+        else
+          candidate_coll_names << REPL_SET_OPLOG_COLL_NAME
+        end
+
+        if candidate_coll_names.empty? then
+          raise OplogException, OPLOG_NOT_FOUND_MSG
+        elsif candidate_coll_names.size > 1 then
+          raise OplogException, OPLOG_AMBIGUOUS_MSG
+        else
+          oplog_coll = oplog_db.collection(candidate_coll_names.first)
+        end
+      else
+        begin
+          oplog_db.validate_collection(oplog_collection_name)
+        rescue Mongo::MongoDBError
+          raise OplogException, OPLOG_NOT_FOUND_MSG
+        end
+
+        oplog_coll = oplog_db.collection(oplog_collection_name)
+      end
+
+      return oplog_coll
     end
   end
 end

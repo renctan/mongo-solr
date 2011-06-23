@@ -16,7 +16,7 @@ module MongoSolr
       options.solr_server = "http://localhost:8983/solr"
       options.mongo_loc = "localhost"
       options.mongo_port = 27017
-      options.mode = :master_slave
+      options.mode = :auto
       options.interval = 1
       options.auth = nil
 
@@ -46,7 +46,8 @@ module MongoSolr
 
         opts.separator ""
         opts.on("-m", "--mode MODE", "ms for master/slave or rset for",
-                "replica set. Defaults to ms.") do |mode|
+                "replica set. Tries to automatically",
+                "detect which mode to use by default.") do |mode|
           options.mode = case mode
                          when "ms" then :master_slave
                          when "rset" then :repl_set
