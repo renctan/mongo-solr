@@ -81,8 +81,10 @@ class RandomDocGen
   ######################################################
   private
   ONE_MB = 2**20
-  READABLE_CHARS = "1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ" +
-    "!\"#$\%&'()~)=~|-^\\@[;:],./_?><}*+{`"
+  # Subset of readable ASCII characters with some amount of space scattered around to
+  # increase chances of having spaces
+  READABLE_CHARS = "1234567890 abcdefghijklm nopqrstuvwxyz ABCDEFGHIJKLM NOPQRSTUVWXYZ " +
+    "!\"#$\%&' ()~)=~|-^\\@ [;:],./_?> <}*+{`"
   READABLE_CHARS_SIZE = READABLE_CHARS.size
   DELETE_THIS_KEY = "delete_this"
   DELETE_THIS_VALUE = "#{TEST_DB}_delete_this"
