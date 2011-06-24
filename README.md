@@ -10,11 +10,9 @@ Simply run the mongo_solr.rb on the root directory. For more details on the conf
 
 # External Gem Dependencies:
 
-## For running the script:
-  gem install rsolr mongo
+Run the following command to install all the gem dependencies used by this project:
 
-## For running the tests:
-  gem install shoulda mocha
+  bundle install
 
 # Running the test:
 
@@ -25,9 +23,8 @@ The tests are located at the test/unit and test/integration respectively.
 The integration test uses the following assumptions:
 
 1. The database server is running locally and using port 27107.
-2. The database server is running on a master slave configuration.
+2. The database server is running on a master slave or replica set configuration.
 3. There is no admin user registered on the database.
-4. The database server is running with security mode on (by passing the --auth option).
-5. The test sets the output of the logger to "/dev/null" so the system running it should be able
+4. The test sets the output of the logger to "/dev/null" so the system running it should be able
    to understand it.
 

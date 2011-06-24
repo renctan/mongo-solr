@@ -7,7 +7,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
   DB_CONNECTION = Mongo::Connection.new(DB_LOC, DB_PORT)
   TEST_DB = "MongoSolrSynchronizerIntegrationTestDB"
   TEST_DB_2 = "#{TEST_DB}_2"
-  MODE = :master_slave
+  MODE = :auto
   DEFAULT_LOGGER = Logger.new("/dev/null")
 
   context "basic test" do
