@@ -20,27 +20,31 @@ module MongoSolr
     # @param mongo_connection [Mongo::Connection] The connection to the database to synchronize.
     # @param mode [Symbol] Mode of the MongoDB server connected to. Accepted symbols - :repl_set,
     #   :master_slave
+    # @param db_list [Array<Object>] ([]) The list of databases and their collections to index
+    #   to Solr. The object should respond to the following methods with the behaviours:
+    #
+    #   collections() - returns [Enumerable<String>] the collections to index
+    #   get_auth() - returns [Hash] with symbols :user and :pwd that contains the raw string
+    #   name() - returns [String] the name of the database
     #
     # Example:
     #  mongo = Mongo::Connection.new("localhost", 27017)
     #  solr_client = RSolr.connect(:url => "http://localhost:8983/solr")
     #  solr = MongoSolr::SolrSynchronizer.new(solr_client, mongo, :master_slave)
-    def initialize(solr, mongo_connection, mode)
+    def initialize(solr, mongo_connection, mode, db_list = [])
       @solr = solr
       @db_connection = mongo_connection
       @mode = mode
       @logger = Logger.new(STDOUT)
+      @db_list = db_list
     end
 
     # Continuously synchronizes the database contents with Solr. Please note that this is a
-    # blocking call that contains an infinite loop.
+    # blocking call that contains an infinite loop. This method assumes that the databases
+    # are already authenticated.
     #
     # @option opt [number] :interval (1) The interval in seconds to wait before checking for
     #    new updates in the database
-    # @option opt [Hash<Hash>] :db_pass ({}) The hash with database names as keys and a hash
-    #   containing the authentication data as values with the format:
-    #
-    #     { :user => "foo", :pwd => "bar" }
     #
     # @param block [Proc(mode, doc_count)] An optional  procedure that will be called during
     #   certain conditions:
@@ -56,16 +60,6 @@ module MongoSolr
     #          "admin" => { :user => "admin", :pwd => "" } }
     # solr.sync({ :db_pass => auth, :interval => 1 })
     def sync(opt = {}, &block)
-      db_pass = opt[:db_pass] || {}
-
-      if authenticate_to_db("admin", db_pass) then
-        db_pass = {}
-      end
-
-      if authenticate_to_db("local", db_pass) then
-        db_pass.delete("local")
-      end
-
       cursor = Mongo::Cursor.new(get_oplog_collection,
                                  { :tailable => true, :selector => {"op" => {"$ne" => "n"} } })
 
@@ -74,13 +68,7 @@ module MongoSolr
         # Do nothing
       end
 
-      if @admin_authenticated then
-        db_pass = {}
-      else
-        db_pass = opt[:dbpass] || {}
-      end
-
-      dump_db_contents(db_pass)
+      dump_db_contents
       yield :finished_dumping, 0 if block_given?
 
       update_interval = opt[:interval] || 1
@@ -116,7 +104,7 @@ module MongoSolr
     OPLOG_AMBIGUOUS_MSG = "Cannot determine which oplog to use. Please specify " +
       "the appropriate mode."
 
-    # Dump the all contents of the MongoDB server (with the exception of special purpose
+    # Dump all contents of the MongoDB server (with the exception of special purpose
     # databases like admin and config) to be indexed to Solr. If db_pass is not empty, only
     # the databases with authentication data will be dumped.
     #
@@ -124,17 +112,17 @@ module MongoSolr
     #   containing the authentication data as values with the format:
     #
     #     { :user => "foo", :pwd => "bar" }
-    def dump_db_contents(db_pass = {})
-      if db_pass.empty? then
+    def dump_db_contents
+      if @db_list.empty? then
         @db_connection.database_names.each do |db_name|
           unless db_name =~ SPECIAL_PURPOSE_MONGO_DB_NAME_PATTERN then
             dump_collections(@db_connection.db(db_name))
           end
         end
       else
-        db_pass.each_key do |db_name|
-          authenticate_to_db(db_name, db_pass)
-          dump_collections(@db_connection.db(db_name))
+        @db_list.each do |db_entry|
+          db = @db_connection.db(db_entry.name)
+          db_entry.collections.each { |coll| dump_collection(db, coll) }
         end
       end
 
@@ -142,18 +130,26 @@ module MongoSolr
     end
 
     # Dump all collections of the database (with the exception of system.* collections) to
-    # Solr for indexing.
+    # Solr for indexing without committing.
     #
     # @param db [Mongo::DB] The database instance to dump.
     def dump_collections(db)
       db.collection_names.each do |collection_name|
         unless collection_name =~ SPECIAL_COLLECTION_NAME_PATTERN then
-          @logger.info "dumping #{db.name}.#{collection_name}..."
-
-          db.collection(collection_name).find().each do |doc|
-            @solr.add(DocumentTransform.translate_doc(doc))
-          end
+          dump_collection(db, collection_name)
         end
+      end
+    end
+
+    # Dumps the contents of a collection to Solr without committing.
+    #
+    # @param db [Mongo::Database] The database of the collection.
+    # @param collection_name [String] The name of the collection.
+    def dump_collection(db, collection_name)
+      @logger.info "dumping #{db.name}.#{collection_name}..."
+
+      db.collection(collection_name).find().each do |doc|
+        @solr.add(DocumentTransform.translate_doc(doc))
       end
     end
 
@@ -218,22 +214,7 @@ module MongoSolr
       @solr.commit
     end
 
-    # Helper method for authenticating to a database.
-    #
-    # @param db_name [String] The name of the database to authenticate
-    # @param db_pass [Hash] @see #sync
-    #
-    # @return [Boolean] true if db_pass contains authentication information for db_name
-    def authenticate_to_db(db_name, db_pass)
-      auth = db_pass[db_name]
-      
-      if auth.nil? then
-        false
-      else
-        @db_connection.db(db_name).authenticate(auth[:user], auth[:pwd], true)
-        true
-      end
-    end
+
 
     # Helper method for determining whether to apply the oplog entry changes to Solr.
     #
