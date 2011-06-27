@@ -20,23 +20,20 @@ module MongoSolr
     # @param mongo_connection [Mongo::Connection] The connection to the database to synchronize.
     # @param mode [Symbol] Mode of the MongoDB server connected to. Accepted symbols - :repl_set,
     #   :master_slave
-    # @param db_list [Array<Object>] ([]) The list of databases and their collections to index
-    #   to Solr. The object should respond to the following methods with the behaviours:
-    #
-    #   collections() - returns [Enumerable<String>] the collections to index
-    #   get_auth() - returns [Hash] with symbols :user and :pwd that contains the raw string
-    #   name() - returns [String] the name of the database
+    # @param db_set [Hash] ({}) The set of databases and their collections to index to Solr.
+    #   The key should contain the database name in String and the value should be a Set
+    #   object that contains the names of collections.
     #
     # Example:
     #  mongo = Mongo::Connection.new("localhost", 27017)
     #  solr_client = RSolr.connect(:url => "http://localhost:8983/solr")
     #  solr = MongoSolr::SolrSynchronizer.new(solr_client, mongo, :master_slave)
-    def initialize(solr, mongo_connection, mode, db_list = [])
+    def initialize(solr, mongo_connection, mode, db_set = {})
       @solr = solr
       @db_connection = mongo_connection
       @mode = mode
       @logger = Logger.new(STDOUT)
-      @db_list = db_list
+      @db_set = db_set
     end
 
     # Continuously synchronizes the database contents with Solr. Please note that this is a
@@ -105,24 +102,19 @@ module MongoSolr
       "the appropriate mode."
 
     # Dump all contents of the MongoDB server (with the exception of special purpose
-    # databases like admin and config) to be indexed to Solr. If db_pass is not empty, only
-    # the databases with authentication data will be dumped.
-    #
-    # @param db_pass [Hash] ({}) The hash with database names as keys and a hash
-    #   containing the authentication data as values with the format:
-    #
-    #     { :user => "foo", :pwd => "bar" }
+    # databases like admin and config) to be indexed to Solr. If db_set was given during
+    # initialization, only the collection in the list will be dumped.
     def dump_db_contents
-      if @db_list.empty? then
+      if @db_set.empty? then
         @db_connection.database_names.each do |db_name|
           unless db_name =~ SPECIAL_PURPOSE_MONGO_DB_NAME_PATTERN then
             dump_collections(@db_connection.db(db_name))
           end
         end
       else
-        @db_list.each do |db_entry|
-          db = @db_connection.db(db_entry.name)
-          db_entry.collections.each { |coll| dump_collection(db, coll) }
+        @db_set.each do |db_name, collections|
+          db = @db_connection.db(db_name)
+          collections.each { |coll| dump_collection(db, coll) }
         end
       end
 
@@ -214,8 +206,6 @@ module MongoSolr
       @solr.commit
     end
 
-
-
     # Helper method for determining whether to apply the oplog entry changes to Solr.
     #
     # @param namespace [String] The ns field in the oplog entry.
@@ -225,13 +215,22 @@ module MongoSolr
       split = namespace.split(".")
       db_name = split.first
 
-      if db_name =~ SPECIAL_PURPOSE_MONGO_DB_NAME_PATTERN then
-        return true
+      split.delete_at 0
+      collection_name = split.join(".")
+
+      do_skip = true
+
+      if not @db_set.empty? then
+        if @db_set.has_key?(db_name) then
+          do_skip = !@db_set[db_name].include?(collection_name)
+        end
+      elsif db_name =~ SPECIAL_PURPOSE_MONGO_DB_NAME_PATTERN then
+        # do_skip = true
       else
-        split.delete_at 0
-        collection_name = split.join(".")
-        return !(collection_name =~ SPECIAL_COLLECTION_NAME_PATTERN).nil?
+        do_skip = !(collection_name =~ SPECIAL_COLLECTION_NAME_PATTERN).nil?
       end
+
+      return do_skip
     end
 
     # @return [Mongo::Collection] the oplog collection

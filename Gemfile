@@ -4,4 +4,5 @@ gem "rsolr"
 gem "mongo"
 gem "shoulda"
 gem "mocha"
+gem "hamster"
 
