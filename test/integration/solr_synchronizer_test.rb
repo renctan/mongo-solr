@@ -1,6 +1,5 @@
 require_relative "../test_helper"
 require "#{PROJ_SRC_PATH}/solr_synchronizer"
-require "#{PROJ_SRC_PATH}/database"
 require "#{PROJ_SRC_PATH}/synchronized_hash"
 require "#{PROJ_SRC_PATH}/synchronized_set"
 

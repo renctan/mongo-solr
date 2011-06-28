@@ -15,9 +15,9 @@ module MongoSolr
       @hash = @hash.put(key, value)
     end
 
-    # Remove a key
-    def remove(key)
-      @hash = @hash.remove(key)
+    # Delete a key
+    def delete(key)
+      @hash = @hash.delete(key)
     end
 
     def method_missing(sym, *args, &block)
