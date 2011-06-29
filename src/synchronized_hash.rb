@@ -8,7 +8,8 @@ module MongoSolr
       @hash = {}
     end
 
-    # Use the hash.
+    # Use the hash.  Use this method if you want to hold the lock while doing several
+    # operations.
     #
     # @param block [Proc(hash [Hash], lock [Mutex])] The code to execute when using the hash.
     #   The entire block is executed while holding a lock. The lock object is also provided
@@ -17,6 +18,10 @@ module MongoSolr
     # @return [Object] the return value of the block
     def use(&block)
       @hash_mutex.synchronize { yield @hash, @hash_mutex }
+    end
+
+    def method_missing(sym, *args, &block)
+      @hash_mutex.synchronize { @hash.send(sym, *args, &block) }
     end
   end
 end
