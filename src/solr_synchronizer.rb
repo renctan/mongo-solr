@@ -19,7 +19,7 @@ module MongoSolr
     # @param solr [RSolr::Client] The client to the Solr server to populate database documents.
     # @param mongo_connection [Mongo::Connection] The connection to the database to synchronize.
     # @param mode [Symbol] Mode of the MongoDB server connected to. Accepted symbols - :repl_set,
-    #   :master_slave
+    #   :master_slave, :auto
     # @param db_set [MongoSolr::SynchronizedHash] (nil) The set of databases and their collections
     #   to index to Solr. The key should contain the database name in String and the value should
     #   be a SynchronizedSet object that contains the names of collections.
