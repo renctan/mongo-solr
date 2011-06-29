@@ -138,8 +138,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
         @db_set_coll1 = MongoSolr::SynchronizedHash.new
         db_coll = MongoSolr::SynchronizedSet.new
-        db_coll.add(@test_coll1.name)
-        @db_set_coll1[@db.name] = db_coll
+        db_coll.use { |set| set.add(@test_coll1.name) }
+        @db_set_coll1.use { |hash| hash[@db.name] = db_coll }
       end
 
       context "pre-defined collection set" do
@@ -161,8 +161,9 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
         should "perform update on collection in the list (2 db)" do
           db2_coll = MongoSolr::SynchronizedSet.new
-          db2_coll.add(@test_coll3.name)
-          @db_set_coll1[@db2.name] = db2_coll
+          db2_coll.use { |set| set.add(@test_coll3.name) }
+          @db_set_coll1.use { |hash| hash[@db2.name] = db2_coll }
+
           solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1)
           solr.logger = DEFAULT_LOGGER
 
@@ -180,7 +181,9 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         end
 
         should "perform update on collection in the list (same db, diff coll)" do
-          @db_set_coll1[@db.name].add(@test_coll2.name)
+          @db_set_coll1.use do |hash|
+            hash[@db.name].use { |set| set.add(@test_coll2.name) }
+          end
 
           solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1)
           solr.logger = DEFAULT_LOGGER
@@ -245,8 +248,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
               @test_coll1.insert({ "lang" => "Ruby" })
             elsif mode == :sync and doc_count == 0 then
               coll_set = MongoSolr::SynchronizedSet.new
-              coll_set.add(@test_coll1.name)
-              db_set[TEST_DB] = coll_set
+              coll_set.use { |set| set.add(@test_coll1.name) }
+              db_set.use { |hash| hash[TEST_DB] = coll_set }
 
               @test_coll1.insert({ "auth" => "Matz" })
             else
@@ -267,7 +270,10 @@ class SolrSynchronizerTest < Test::Unit::TestCase
             if mode == :finished_dumping then
               @test_coll1.insert({ "lang" => "Ruby" })
             elsif mode == :sync and doc_count == 0 then
-              db_set[TEST_DB].delete(@test_coll1.name)
+              db_set.use do |hash|
+                hash[TEST_DB].use { |set| set.delete(@test_coll1.name) }
+              end
+
               @test_coll1.insert({ "auth" => "Matz" })
             else
               break

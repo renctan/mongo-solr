@@ -20,20 +20,29 @@ module MongoSolr
     # @param mongo_connection [Mongo::Connection] The connection to the database to synchronize.
     # @param mode [Symbol] Mode of the MongoDB server connected to. Accepted symbols - :repl_set,
     #   :master_slave
-    # @param db_set [Hash] ({}) The set of databases and their collections to index to Solr.
-    #   The key should contain the database name in String and the value should be a Set
-    #   object that contains the names of collections.
+    # @param db_set [MongoSolr::SynchronizedHash] (nil) The set of databases and their collections
+    #   to index to Solr. The key should contain the database name in String and the value should
+    #   be a SynchronizedSet object that contains the names of collections.
     #
     # Example:
     #  mongo = Mongo::Connection.new("localhost", 27017)
     #  solr_client = RSolr.connect(:url => "http://localhost:8983/solr")
     #  solr = MongoSolr::SolrSynchronizer.new(solr_client, mongo, :master_slave)
-    def initialize(solr, mongo_connection, mode, db_set = {})
+    def initialize(solr, mongo_connection, mode, db_set = nil)
       @solr = solr
       @db_connection = mongo_connection
       @mode = mode
       @logger = Logger.new(STDOUT)
       @db_set = db_set
+
+      @stop_mutex = Mutex.new
+      # protected by @stop_mutex
+      @stop = false
+    end
+
+    # Stop the sync operation
+    def stop!
+      @stop_mutex.synchronize { @stop = true }
     end
 
     # Continuously synchronizes the database contents with Solr. Please note that this is a
@@ -57,6 +66,8 @@ module MongoSolr
     #          "admin" => { :user => "admin", :pwd => "" } }
     # solr.sync({ :db_pass => auth, :interval => 1 })
     def sync(opt = {}, &block)
+      @stop_mutex.synchronize { @stop = false }
+
       cursor = Mongo::Cursor.new(get_oplog_collection,
                                  { :tailable => true, :selector => {"op" => {"$ne" => "n"} } })
 
@@ -65,17 +76,19 @@ module MongoSolr
         # Do nothing
       end
 
-      dump_db_contents
+      db_set_snapshot = get_db_set_snapshot
+      dump_db_contents(db_set_snapshot)
       yield :finished_dumping, 0 if block_given?
 
       update_interval = opt[:interval] || 1
       doc_count = 0
 
       loop do
+        @stop_mutex.synchronize { return if @stop }
         doc_batch = []
 
         while doc = cursor.next_document do
-          unless filter_entry?(doc["ns"]) then
+          unless filter_entry?(db_set_snapshot, doc["ns"]) then
             doc_batch << doc
             doc_count += 1
           else
@@ -87,6 +100,7 @@ module MongoSolr
         yield :sync, doc_count if block_given?
 
         sleep update_interval
+        db_set_snapshot = get_db_set_snapshot
       end
     end
 
@@ -104,15 +118,19 @@ module MongoSolr
     # Dump all contents of the MongoDB server (with the exception of special purpose
     # databases like admin and config) to be indexed to Solr. If db_set was given during
     # initialization, only the collection in the list will be dumped.
-    def dump_db_contents
-      if @db_set.empty? then
+    #
+    # @param db_set [Hash<String, Array<String> >] a hash which contains the set of
+    #   collections to index. The key contains the name of the database while the value
+    #   contains an array of collection names.
+    def dump_db_contents(db_set)
+      if db_set.empty? then
         @db_connection.database_names.each do |db_name|
           unless db_name =~ SPECIAL_PURPOSE_MONGO_DB_NAME_PATTERN then
             dump_collections(@db_connection.db(db_name))
           end
         end
       else
-        @db_set.each do |db_name, collections|
+        db_set.each do |db_name, collections|
           db = @db_connection.db(db_name)
           collections.each { |coll| dump_collection(db, coll) }
         end
@@ -208,10 +226,13 @@ module MongoSolr
 
     # Helper method for determining whether to apply the oplog entry changes to Solr.
     #
+    # @param db_set [Hash<String, Array<String> >] a hash which contains the set of
+    #   collections to index. The key contains the name of the database while the value
+    #   contains an array of collection names.
     # @param namespace [String] The ns field in the oplog entry.
     #
     # @return [Boolean] true if the oplog entry should be skipped.
-    def filter_entry?(namespace)
+    def filter_entry?(db_set, namespace)
       split = namespace.split(".")
       db_name = split.first
 
@@ -220,9 +241,9 @@ module MongoSolr
 
       do_skip = true
 
-      if not @db_set.empty? then
-        if @db_set.has_key?(db_name) then
-          do_skip = !@db_set[db_name].include?(collection_name)
+      if not db_set.empty? then
+        if db_set.has_key?(db_name) then
+          do_skip = !db_set[db_name].include?(collection_name)
         end
       elsif db_name =~ SPECIAL_PURPOSE_MONGO_DB_NAME_PATTERN then
         # do_skip = true
@@ -286,6 +307,27 @@ module MongoSolr
       end
 
       return oplog_coll
+    end
+
+    # Get the current snapshot of the db_set
+    #
+    # @return [Hash<String, Array<String> >] a hash for the set of collections to index.
+    #   The key contains the name of the database while the value contains an array of
+    #   collection names.
+    def get_db_set_snapshot
+      snapshot = {}
+
+      unless @db_set.nil? then
+        @db_set.use do |hash|
+          hash.each do |key, sync_set|
+            sync_set.use do |set|
+              snapshot[key] = set.to_a
+            end
+          end
+        end
+      end
+
+      return snapshot
     end
   end
 end

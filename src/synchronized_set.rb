@@ -1,28 +1,25 @@
-require "hamster/set"
+require "set"
 
 module MongoSolr
-  # A simple thread-safe set collection that wraps around the Hamster set class which assigns the
-  # copies made during some operations to itself.
-  #
-  # @see Hamster.Set
+  # A simple wrapper class for accessing a set with a mutex.
   class SynchronizedSet
     def initialize
-      @set = Hamster.set
+      @set_mutex = Mutex.new
+
+      # Protected by @set_mutex
+      @set = Set.new
     end
 
-    # Add an item to the set
-    def add(item)
-      @set = @set.add(item)
+    # Use the set.
+    #
+    # @param block [Proc(set [Set], lock [Mutex])] The code to execute when using the set.
+    #   The entire block is executed while holding a lock. The lock object is also provided
+    #   to more fine grain control like releasing the lock.
+    #
+    # @return [Object] the return value of the block
+    def use(&block)
+      @set_mutex.synchronize { yield @set, @set_mutex }
     end
-
-    # Delete an item from the set
-    def delete(item)
-      @set = @set.delete(item)
-    end
-
-    def method_missing(sym, *args, &block)
-      @set.send(sym, *args, &block)
-    end
-  end 
+  end
 end
 
