@@ -166,7 +166,7 @@ module MongoSolr
 
         while doc = cursor.next_document do
           if insert_to_backlog(doc) then
-            # TODO: Nothing?
+            # Do nothing
           elsif filter_entry?(db_set_snapshot, doc["ns"]) then
             @logger.debug "skipped oplog: #{doc}"
           else
