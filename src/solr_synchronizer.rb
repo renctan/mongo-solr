@@ -476,7 +476,7 @@ module MongoSolr
             yield :depleted_backlog if block_given?
           end
 
-          backlog_sync_thread.join if wait          
+          backlog_sync_thread.join if wait
         end
       end
     end
