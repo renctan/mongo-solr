@@ -71,14 +71,16 @@ module MongoSolr
     #   collections to index to Solr. The key should contain the database name in
     #   String and the value should be an array that contains the names of collections.
     #   An empty hash means that everything will be indexed.
-    def update_db_set(new_db_set)
+    # @param wait [Boolean] Waits until the newly added sets are not in a backlogged state
+    #   before returning if set to true. Defaults to false.
+    def update_db_set(new_db_set, wait = false)
       # Lock usage:
       # 1. @is_synching->@db_set->add_collection_wo_lock()
 
       @synching_mutex.synchronize do
         @db_set.use do |db_set|
           new_db_set.each do |db_name, collection|
-            add_collection_wo_lock(db_set, @is_synching, db_name, collection)
+            add_collection_wo_lock(db_set, @is_synching, db_name, collection, wait)
           end
 
           db_set.clear
@@ -91,13 +93,16 @@ module MongoSolr
     #
     # @param db_name [String] Name of the database the collection belongs to.
     # @param collection [String|Enumerable] Name of the collection(s) to add.
-    def add_collection(db_name, collection)
+    # @param wait [Boolean] Waits until the newly added sets are not in a backlogged state
+    #   before returning if set to true. Defaults to false.
+    # @param block[Proc] For debugging/testing only. @see #add_collection_wo_lock
+    def add_collection(db_name, collection, wait = false, &block)
       # Lock usage:
       # 1. @is_synching->@db_set->add_collection_wo_lock()      
 
       @synching_mutex.synchronize do
         @db_set.use do |db_set|
-          add_collection_wo_lock(db_set, @is_synching, db_name, collection)
+          add_collection_wo_lock(db_set, @is_synching, db_name, collection, wait, &block)
         end
       end
     end
@@ -402,10 +407,19 @@ module MongoSolr
     # @param is_synching [Boolean]
     # @param db_name [String] The name of the database
     # @param collection [String|Enumerable] Name of the collection(s) to add.
-    def add_collection_wo_lock(db_set, is_synching, db_name, collection)
+    # @param wait [Boolean] Waits until the newly added sets are not in a backlogged state
+    #   before returning if set to true.
+    # @param &block [Proc(mode, backlog)] Extra block parameter for debugging and testing.
+    #   The mode can be :finished_dumping or :depleted_backlog, which describes on which
+    #   stage it is running on. The backlog paramereter is the array of backlogged oplog
+    #   This block will be called repeatedly during the :finished_dumping stage until the
+    #   block returns (break) a false value
+    def add_collection_wo_lock(db_set, is_synching, db_name, collection, wait, &block)
       # Lock usage:
       # 1. @oplog_backlog
       # 2. Spawns a thread that uses @oplog_backlog
+
+      db_set_was_empty_before = db_set.empty?
 
       if db_set.has_key? db_name then
         current_collection = db_set[db_name]
@@ -423,12 +437,44 @@ module MongoSolr
       diff = new_collection - current_collection
       current_collection.merge(diff)
 
-      if is_synching then
+      if is_synching and not db_set_was_empty_before then
         db = @db_connection.db(db_name)
 
         diff.each do |coll|
           oplog_ns = "#{db_name}.#{coll}"
           @oplog_backlog[oplog_ns] = []
+
+          backlog_sync_thread = Thread.start do
+            dump_collection(db, coll)
+
+            # For testing/debugging only
+            if block_given? then
+              block_val = true
+              while block_val do
+                block_val = yield :finished_dumping, @oplog_backlog[oplog_ns]
+                # Do nothing
+              end
+            end
+            
+            # Consume all oplogs that have accumulated while performing the dump and
+            # while performing this task.
+            @oplog_backlog.use do |backlog, mutex|
+              until backlog[oplog_ns].empty?
+                oplog_entries = backlog[oplog_ns]
+                backlog[oplog_ns] = []
+
+                mutex.unlock
+                update_solr(oplog_entries)
+                mutex.lock
+              end
+
+              backlog.delete(oplog_ns)
+            end
+
+            yield :depleted_backlog if block_given?
+          end
+
+          backlog_sync_thread.join if wait          
         end
       end
     end
@@ -441,8 +487,16 @@ module MongoSolr
     # @return true when the entry was inserted to the backlog
     def insert_to_backlog(oplog_entry)
       ns = oplog_entry["ns"]
-      # TODO: implement
-      return false
+      inserted = false
+
+      @oplog_backlog.use do |backlog|
+        if backlog.has_key? ns then
+          backlog[ns] << oplog_entry
+          inserted = true
+        end
+      end
+
+      return inserted
     end
 
     # @return true when the sync thread needs to stop.

@@ -235,7 +235,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
           solr.sync do |mode, doc_count|
             if mode == :finished_dumping then
-              solr.add_collection(TEST_DB, @test_coll1.name)
+              solr.add_collection(TEST_DB, @test_coll1.name, true)
               @test_coll1.insert({ "auth" => "Matz" })
             else
               break
@@ -252,7 +252,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
           solr.sync do |mode, doc_count|
             if mode == :finished_dumping then
-              solr.add_collection(TEST_DB, @test_coll2.name)
+              solr.add_collection(TEST_DB, @test_coll2.name, true)
               @test_coll1.insert({ "auth" => "Matz" })
             else
               break
@@ -272,7 +272,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
           solr.sync do |mode, doc_count|
             if mode == :finished_dumping then
               @db_set_coll1[@db.name] << @test_coll2.name
-              solr.update_db_set(@db_set_coll1)
+              solr.update_db_set(@db_set_coll1, true)
               @test_coll2.insert({ "auth" => "Matz" })
             else
               break
@@ -290,7 +290,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
           solr.sync do |mode, doc_count|
             if mode == :finished_dumping then
               @db_set_coll1[@db2.name] = Set.new([@test_coll3.name])
-              solr.update_db_set(@db_set_coll1)
+              solr.update_db_set(@db_set_coll1, true)
               @test_coll3.insert({ "auth" => "Matz" })
             else
               break
@@ -309,12 +309,48 @@ class SolrSynchronizerTest < Test::Unit::TestCase
           solr.sync do |mode, doc_count|
             if mode == :finished_dumping then
               @db_set_coll1[@db.name] = Set.new([@test_coll1.name])
-              solr.update_db_set(@db_set_coll1)
+              solr.update_db_set(@db_set_coll1, true)
               @test_coll2.insert({ "auth" => "Matz" })
             else
               break
             end
           end
+        end
+      end
+
+      context "backlog update testing" do
+        should "update perform all inserts in the backlog" do
+          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1)
+          solr.logger = DEFAULT_LOGGER
+
+          @solr.stubs(:commit)
+
+          sync_thread = Thread.start do
+            finished_inserting = false
+
+            solr.sync do |mode|
+              if mode == :finished_dumping then
+                solr.add_collection(@db2.name, @test_coll3.name) do |add_stage, backlog|
+                  if add_stage == :finished_dumping and not finished_inserting then
+                    @test_coll3.insert({ "lang" => "Ruby" })
+                    @test_coll3.insert({ "auth" => "Matz" })
+                    finished_inserting = true
+                    @solr.expects(:add).twice
+                    true
+                  elsif add_stage == :finished_dumping and backlog.empty? then
+                    Thread.pass
+                    true
+                  elsif add_stage == :depleted_backlog then
+                    solr.stop!
+                  else
+                    false
+                  end
+                end
+              end
+            end
+          end
+
+          sync_thread.join
         end
       end
     end
