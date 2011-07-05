@@ -163,6 +163,7 @@ module MongoSolr
       loop do
         return if stop_synching?
         doc_batch = []
+        db_set_snapshot = get_db_set_snapshot
 
         while doc = cursor.next_document do
           if insert_to_backlog(doc) then
@@ -181,9 +182,20 @@ module MongoSolr
         yield :sync, doc_count if block_given?
 
         sleep update_interval
-        db_set_snapshot = get_db_set_snapshot
       end
     end
+
+    # Gets the current snapshot of the db_set.
+    #
+    # @return [Hash<String, Enumerable<String> >] a hash for the set of collections to index.
+    #   The key contains the name of the database while the value contains an array of
+    #   collection names.
+    def get_db_set_snapshot
+      # Lock usage: @db_set
+      return @db_set.use { |db_set| db_set.clone }
+    end
+
+    alias_method :db_set, :get_db_set_snapshot
 
     ############################################################################
     private
@@ -390,16 +402,6 @@ module MongoSolr
       return oplog_coll
     end
 
-    # Gets the current snapshot of the db_set.
-    #
-    # @return [Hash<String, Enumerable<String> >] a hash for the set of collections to index.
-    #   The key contains the name of the database while the value contains an array of
-    #   collection names.
-    def get_db_set_snapshot
-      # Lock usage: @db_set
-      return @db_set.clone
-    end
-
     # Adds a collection without using a lock. Caller should be holding the lock for
     # @synching_mutex and @db_set while calling this method.
     #
@@ -515,6 +517,8 @@ module MongoSolr
 
       return do_stop
     end
+
+
   end
 end
 
