@@ -6,6 +6,7 @@ require "logger"
 
 require_relative "document_transform"
 require_relative "exception"
+require_relative "synchronized_hash"
 
 module MongoSolr
   # A simple class utility for indexing an entire MongoDB database contents (excluding
@@ -14,35 +15,91 @@ module MongoSolr
     # [Logger] Set the logger to be used to output. Defaults to STDOUT.
     attr_writer :logger
 
-    # Create a synchronizer instance.
+    # Creates a synchronizer instance.
     #
     # @param solr [RSolr::Client] The client to the Solr server to populate database documents.
     # @param mongo_connection [Mongo::Connection] The connection to the database to synchronize.
     # @param mode [Symbol] Mode of the MongoDB server connected to. Accepted symbols - :repl_set,
     #   :master_slave, :auto
-    # @param db_set [MongoSolr::SynchronizedHash] (nil) The set of databases and their collections
-    #   to index to Solr. The key should contain the database name in String and the value should
-    #   be a SynchronizedSet object that contains the names of collections.
+    # @param db_set [Hash<String, Set<String> >] ({}) The set of databases and their
+    #   collections to index to Solr. The key should contain the database name in
+    #   String and the value should be an array that contains the names of collections.
+    #   An empty hash means that everything will be indexed.
     #
     # Example:
     #  mongo = Mongo::Connection.new("localhost", 27017)
     #  solr_client = RSolr.connect(:url => "http://localhost:8983/solr")
     #  solr = MongoSolr::SolrSynchronizer.new(solr_client, mongo, :master_slave)
-    def initialize(solr, mongo_connection, mode, db_set = nil)
+    def initialize(solr, mongo_connection, mode, db_set = {})
       @solr = solr
       @db_connection = mongo_connection
       @mode = mode
       @logger = Logger.new(STDOUT)
-      @db_set = db_set
 
+      # The set of collections to listen to for updates in the oplogs.
+      @db_set = MongoSolr::SynchronizedHash.new(db_set)
+
+      # The oplog data for collections that are still in the process of dumping.
+      @oplog_backlog = MongoSolr::SynchronizedHash.new
+
+      # Locks should be taken in this order to avoid deadlock
       @stop_mutex = Mutex.new
+      @synching_mutex = Mutex.new
+      # implicit db_set mutex
+      # implicit synching_set mutex
+
+      # True to tell the sync thread to stop.
       # protected by @stop_mutex
       @stop = false
+
+      # True if this object is currently performing a sync with the database
+      # protected by @synching_mutex
+      @is_synching = false 
     end
 
     # Stop the sync operation
     def stop!
+      # Lock usage:
+      # 1. @stop_mutex
+
       @stop_mutex.synchronize { @stop = true }
+    end
+
+    # Replaces the current set of collection to listen with a new one.
+    #
+    # @param new_db_set [Hash<String, Set<String> >] The set of databases and their
+    #   collections to index to Solr. The key should contain the database name in
+    #   String and the value should be an array that contains the names of collections.
+    #   An empty hash means that everything will be indexed.
+    def update_db_set(new_db_set)
+      # Lock usage:
+      # 1. @is_synching->@db_set->add_collection_wo_lock()
+
+      @synching_mutex.synchronize do
+        @db_set.use do |db_set|
+          new_db_set.each do |db_name, collection|
+            add_collection_wo_lock(db_set, @is_synching, db_name, collection)
+          end
+
+          db_set.clear
+          db_set.merge!(new_db_set)
+        end
+      end
+    end
+
+    # Adds a new collection to index.
+    #
+    # @param db_name [String] Name of the database the collection belongs to.
+    # @param collection [String|Enumerable] Name of the collection(s) to add.
+    def add_collection(db_name, collection)
+      # Lock usage:
+      # 1. @is_synching->@db_set->add_collection_wo_lock()      
+
+      @synching_mutex.synchronize do
+        @db_set.use do |db_set|
+          add_collection_wo_lock(db_set, @is_synching, db_name, collection)
+        end
+      end
     end
 
     # Continuously synchronizes the database contents with Solr. Please note that this is a
@@ -66,7 +123,22 @@ module MongoSolr
     #          "admin" => { :user => "admin", :pwd => "" } }
     # solr.sync({ :db_pass => auth, :interval => 1 })
     def sync(opt = {}, &block)
-      @stop_mutex.synchronize { @stop = false }
+      # Lock usage:
+      # 1. @stop_mutex->@synching_mutex
+      # 2. get_db_set_snapshot()
+      # 3. insert_to_backlog()
+      # 4. stop_synching?()
+
+      @stop_mutex.synchronize do
+        @synching_mutex.synchronize do
+          if @is_synching then
+            return
+          else
+            @stop = false
+            @is_synching = true
+          end
+        end
+      end
 
       cursor = Mongo::Cursor.new(get_oplog_collection,
                                  { :tailable => true, :selector => {"op" => {"$ne" => "n"} } })
@@ -84,16 +156,20 @@ module MongoSolr
       doc_count = 0
 
       loop do
-        @stop_mutex.synchronize { return if @stop }
+        return if stop_synching?
         doc_batch = []
 
         while doc = cursor.next_document do
-          unless filter_entry?(db_set_snapshot, doc["ns"]) then
+          if insert_to_backlog(doc) then
+            # TODO: Nothing?
+          elsif filter_entry?(db_set_snapshot, doc["ns"]) then
+            @logger.debug "skipped oplog: #{doc}"
+          else
             doc_batch << doc
             doc_count += 1
-          else
-            @logger.debug "skipped oplog: #{doc}"
           end
+
+          return if stop_synching?
         end
 
         update_solr(doc_batch)
@@ -115,7 +191,7 @@ module MongoSolr
     OPLOG_AMBIGUOUS_MSG = "Cannot determine which oplog to use. Please specify " +
       "the appropriate mode."
 
-    # Dump all contents of the MongoDB server (with the exception of special purpose
+    # Dumps all contents of the MongoDB server (with the exception of special purpose
     # databases like admin and config) to be indexed to Solr. If db_set was given during
     # initialization, only the collection in the list will be dumped.
     #
@@ -139,7 +215,7 @@ module MongoSolr
       @solr.commit
     end
 
-    # Dump all collections of the database (with the exception of system.* collections) to
+    # Dumps all collections of the database (with the exception of system.* collections) to
     # Solr for indexing without committing.
     #
     # @param db [Mongo::DB] The database instance to dump.
@@ -163,7 +239,7 @@ module MongoSolr
       end
     end
 
-    # Synchronize the contents of the database to Solr by applying the operations
+    # Synchronizes the contents of the database to Solr by applying the operations
     # in the oplog.
     #
     # @param oplog_doc_entries [Array<Object>] An array of Mongo documents containing
@@ -309,25 +385,81 @@ module MongoSolr
       return oplog_coll
     end
 
-    # Get the current snapshot of the db_set
+    # Gets the current snapshot of the db_set.
     #
-    # @return [Hash<String, Array<String> >] a hash for the set of collections to index.
+    # @return [Hash<String, Enumerable<String> >] a hash for the set of collections to index.
     #   The key contains the name of the database while the value contains an array of
     #   collection names.
     def get_db_set_snapshot
-      snapshot = {}
+      # Lock usage: @db_set
+      return @db_set.clone
+    end
 
-      unless @db_set.nil? then
-        @db_set.use do |hash|
-          hash.each do |key, sync_set|
-            sync_set.use do |set|
-              snapshot[key] = set.to_a
-            end
-          end
+    # Adds a collection without using a lock. Caller should be holding the lock for
+    # @synching_mutex and @db_set while calling this method.
+    #
+    # @param db_set [Hash] The hash inside the SynchronizedHash wrapper.
+    # @param is_synching [Boolean]
+    # @param db_name [String] The name of the database
+    # @param collection [String|Enumerable] Name of the collection(s) to add.
+    def add_collection_wo_lock(db_set, is_synching, db_name, collection)
+      # Lock usage:
+      # 1. @oplog_backlog
+      # 2. Spawns a thread that uses @oplog_backlog
+
+      if db_set.has_key? db_name then
+        current_collection = db_set[db_name]
+      else
+        current_collection = Set.new
+        db_set[db_name] = current_collection
+      end
+
+      if collection.is_a? Enumerable then
+        new_collection = Set.new(collection)
+      else
+        new_collection = Set.new([collection])
+      end
+
+      diff = new_collection - current_collection
+      current_collection.merge(diff)
+
+      if is_synching then
+        db = @db_connection.db(db_name)
+
+        diff.each do |coll|
+          oplog_ns = "#{db_name}.#{coll}"
+          @oplog_backlog[oplog_ns] = []
+        end
+      end
+    end
+
+    # Inserts an oplog entry to the backlog if there is still a thread dumping the collection
+    # for the given namespace.
+    #
+    # @param oplog_entry [Object] The document 
+    #
+    # @return true when the entry was inserted to the backlog
+    def insert_to_backlog(oplog_entry)
+      ns = oplog_entry["ns"]
+      # TODO: implement
+      return false
+    end
+
+    # @return true when the sync thread needs to stop.
+    def stop_synching?
+      # Lock usage:
+      # 1. @stop_mutex->@synching_mutex
+
+      do_stop = false
+
+      @stop_mutex.synchronize do
+        if @stop then
+          @synching_mutex.synchronize { @is_synching = false }
+          do_stop = true
         end
       end
 
-      return snapshot
+      return do_stop
     end
   end
 end

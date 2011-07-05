@@ -1,11 +1,12 @@
 module MongoSolr
   # A simple wrapper class for accessing a hash with a mutex.
   class SynchronizedHash
-    def initialize
+    # @param hash [Hash] ({}) An initial hash to populate this object.
+    def initialize(hash = {})
       @hash_mutex = Mutex.new
 
       # Protected by @hash_mutex
-      @hash = {}
+      @hash = hash.clone
     end
 
     # Use the hash.  Use this method if you want to hold the lock while doing several

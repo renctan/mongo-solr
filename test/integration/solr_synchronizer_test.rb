@@ -1,7 +1,5 @@
 require_relative "../test_helper"
 require "#{PROJ_SRC_PATH}/solr_synchronizer"
-require "#{PROJ_SRC_PATH}/synchronized_hash"
-require "#{PROJ_SRC_PATH}/synchronized_set"
 
 class SolrSynchronizerTest < Test::Unit::TestCase
   DB_LOC = "localhost"
@@ -110,7 +108,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       end
     end
 
-    should "update db inserts, updates and deletes to solr after dumping" do
+    should "db inserts, updates and deletes to solr after dumping" do
       @test_coll1.insert({ "msg" => "Hello world!" })
 
       solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE)
@@ -136,14 +134,12 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         @db = DB_CONNECTION.db(TEST_DB)
         @db2 = DB_CONNECTION.db(TEST_DB_2)
 
-        @db_set_coll1 = MongoSolr::SynchronizedHash.new
-        db_coll = MongoSolr::SynchronizedSet.new
-        db_coll.add(@test_coll1.name)
-        @db_set_coll1[@db.name] = db_coll
+        @db_set_coll1 = {}
+        @db_set_coll1[@db.name] = Set.new([@test_coll1.name])
       end
 
       context "pre-defined collection set" do
-        should "perform update on collection in the list (single db)" do
+        should "update on collection in the list (single db)" do
           solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1)
           solr.logger = DEFAULT_LOGGER
 
@@ -159,10 +155,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
           end
         end
 
-        should "perform update on collection in the list (2 db)" do
-          db2_coll = MongoSolr::SynchronizedSet.new
-          db2_coll.add(@test_coll3.name)
-          @db_set_coll1[@db2.name] = db2_coll
+        should "update on collection in the list (2 db)" do
+          @db_set_coll1[@db2.name] = Set.new([@test_coll3.name])
           solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1)
           solr.logger = DEFAULT_LOGGER
 
@@ -179,7 +173,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
           end
         end
 
-        should "perform update on collection in the list (same db, diff coll)" do
+        should "update on collection in the list (same db, diff coll)" do
           @db_set_coll1[@db.name].add(@test_coll2.name)
 
           solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1)
@@ -198,7 +192,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
           end
         end
 
-        should "not perform update on collection not in the list (different db)" do
+        should "not update on collection not in the list (different db)" do
           solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1)
           solr.logger = DEFAULT_LOGGER
 
@@ -214,7 +208,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
           end
         end
 
-        should "not perform update on collection not in the list (same db, diff coll)" do
+        should "not update on collection not in the list (same db, diff coll)" do
           solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1)
           solr.logger = DEFAULT_LOGGER
 
@@ -231,10 +225,9 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         end
       end
 
-      context "dynamic collection set modification" do
-        should "perform update after being added in the list (single db)" do
-          db_set = MongoSolr::SynchronizedHash.new
-          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, db_set)
+      context "dynamic collection set modification using the add_collection API" do
+        should "update after being added in the list (single db)" do
+          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE)
           solr.logger = DEFAULT_LOGGER
 
           @solr.expects(:add).once
@@ -242,12 +235,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
           solr.sync do |mode, doc_count|
             if mode == :finished_dumping then
-              @test_coll1.insert({ "lang" => "Ruby" })
-            elsif mode == :sync and doc_count == 0 then
-              coll_set = MongoSolr::SynchronizedSet.new
-              coll_set.add(@test_coll1.name)
-              db_set[TEST_DB] = coll_set
-
+              solr.add_collection(TEST_DB, @test_coll1.name)
               @test_coll1.insert({ "auth" => "Matz" })
             else
               break
@@ -255,8 +243,26 @@ class SolrSynchronizerTest < Test::Unit::TestCase
           end
         end
 
-        should "not perform update after being deleted from the list (single db)" do
-          db_set = MongoSolr::SynchronizedHash.new
+        should "not update after if not in the set calling add_collection (single db)" do
+          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, {})
+          solr.logger = DEFAULT_LOGGER
+
+          @solr.expects(:add).never
+          @solr.stubs(:commit)
+
+          solr.sync do |mode, doc_count|
+            if mode == :finished_dumping then
+              solr.add_collection(TEST_DB, @test_coll2.name)
+              @test_coll1.insert({ "auth" => "Matz" })
+            else
+              break
+            end
+          end
+        end
+      end
+
+      context "dynamic collection set modification using the update_db_set API" do
+        should "should update on new entry added in the set (same db)" do
           solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1)
           solr.logger = DEFAULT_LOGGER
 
@@ -265,10 +271,46 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
           solr.sync do |mode, doc_count|
             if mode == :finished_dumping then
-              @test_coll1.insert({ "lang" => "Ruby" })
-            elsif mode == :sync and doc_count == 0 then
-              db_set[TEST_DB].delete(@test_coll1.name)
-              @test_coll1.insert({ "auth" => "Matz" })
+              @db_set_coll1[@db.name] << @test_coll2.name
+              solr.update_db_set(@db_set_coll1)
+              @test_coll2.insert({ "auth" => "Matz" })
+            else
+              break
+            end
+          end
+        end
+
+        should "should update on new entry added in the set (different db)" do
+          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1)
+          solr.logger = DEFAULT_LOGGER
+
+          @solr.expects(:add).once
+          @solr.stubs(:commit)
+
+          solr.sync do |mode, doc_count|
+            if mode == :finished_dumping then
+              @db_set_coll1[@db2.name] = Set.new([@test_coll3.name])
+              solr.update_db_set(@db_set_coll1)
+              @test_coll3.insert({ "auth" => "Matz" })
+            else
+              break
+            end
+          end
+        end
+
+        should "should not update on entry removed from the set" do
+          @db_set_coll1[@db.name] << @test_coll2.name
+          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1)
+          solr.logger = DEFAULT_LOGGER
+
+          @solr.expects(:add).never
+          @solr.stubs(:commit)
+
+          solr.sync do |mode, doc_count|
+            if mode == :finished_dumping then
+              @db_set_coll1[@db.name] = Set.new([@test_coll1.name])
+              solr.update_db_set(@db_set_coll1)
+              @test_coll2.insert({ "auth" => "Matz" })
             else
               break
             end
