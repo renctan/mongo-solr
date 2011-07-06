@@ -25,16 +25,18 @@ module MongoSolr
     #   collections to index to Solr. The key should contain the database name in
     #   String and the value should be an array that contains the names of collections.
     #   An empty hash means that everything will be indexed.
+    # @option opt [String] :name ("") A string label that will be prefixed to all log outputs.
     #
     # Example:
     #  mongo = Mongo::Connection.new("localhost", 27017)
     #  solr_client = RSolr.connect(:url => "http://localhost:8983/solr")
     #  solr = MongoSolr::SolrSynchronizer.new(solr_client, mongo, :master_slave)
-    def initialize(solr, mongo_connection, mode, db_set = {})
+    def initialize(solr, mongo_connection, mode, db_set = {}, opt = {})
       @solr = solr
       @db_connection = mongo_connection
       @mode = mode
       @logger = Logger.new(STDOUT)
+      @name = opt[:name] || ""
 
       # The set of collections to listen to for updates in the oplogs.
       @db_set = MongoSolr::SynchronizedHash.new(db_set)
@@ -169,7 +171,7 @@ module MongoSolr
           if insert_to_backlog(doc) then
             # Do nothing
           elsif filter_entry?(db_set_snapshot, doc["ns"]) then
-            @logger.debug "skipped oplog: #{doc}"
+            @logger.debug "#{@name}: skipped oplog: #{doc}"
           else
             doc_batch << doc
             doc_count += 1
@@ -249,7 +251,7 @@ module MongoSolr
     # @param db [Mongo::Database] The database of the collection.
     # @param collection_name [String] The name of the collection.
     def dump_collection(db, collection_name)
-      @logger.info "dumping #{db.name}.#{collection_name}..."
+      @logger.info "#{@name}: dumping #{db.name}.#{collection_name}..."
 
       db.collection(collection_name).find().each do |doc|
         @solr.add(DocumentTransform.translate_doc(doc))
@@ -270,7 +272,7 @@ module MongoSolr
 
         case oplog_entry["op"]
         when "i" then
-          @logger.info "adding #{doc.inspect}"
+          @logger.info "#{@name}: adding #{doc.inspect}"
           @solr.add(DocumentTransform.translate_doc(doc))
 
         when "u" then
@@ -289,14 +291,14 @@ module MongoSolr
           id = oplog_entry["o"]["_id"]
           to_update.delete(id)
 
-          @logger.info "deleting #{doc.inspect}"
+          @logger.info "#{@name}: deleting #{doc.inspect}"
           @solr.delete_by_id id
 
         when "n" then
           # NOOP: do nothing
 
         else
-          @logger.error "Unrecognized operation in oplog entry: #{oplog_entry.inspect}"
+          @logger.error "#{@name}: Unrecognized operation in oplog entry: #{oplog_entry.inspect}"
         end
       end
 
@@ -309,7 +311,7 @@ module MongoSolr
           find({"_id" => {"$in" => id_list.to_a}})
 
         to_update.each do |doc|
-          @logger.info "updating #{doc.inspect}"
+          @logger.info "#{@name}: updating #{doc.inspect}"
           @solr.add(DocumentTransform.translate_doc(doc))
         end
       end
@@ -515,10 +517,9 @@ module MongoSolr
         end
       end
 
+      @logger.info "#{@name}: Stopping sync..." if do_stop
       return do_stop
     end
-
-
   end
 end
 
