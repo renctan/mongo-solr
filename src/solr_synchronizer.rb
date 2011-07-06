@@ -147,7 +147,7 @@ module MongoSolr
         end
       end
 
-      cursor = Mongo::Cursor.new(get_oplog_collection,
+      cursor = Mongo::Cursor.new(get_oplog_collection(@mode),
                                  { :tailable => true, :selector => {"op" => {"$ne" => "n"} } })
 
       # Go to the tail of cursor. Must find a better way moving the cursor to the latest entry.
@@ -348,13 +348,16 @@ module MongoSolr
 
       return do_skip
     end
-
+    
+    # @param mode [Symbol] The mode of which the database server is running on. Recognized
+    #   symbols: :master_slave, :repl_set, :auto
+    #
     # @return [Mongo::Collection] the oplog collection
     #
     # @raise [OplogException]
-    def get_oplog_collection
+    def get_oplog_collection(mode)
       oplog_coll = nil
-      oplog_collection_name = case @mode
+      oplog_collection_name = case mode
                               when :master_slave then MASTER_SLAVE_OPLOG_COLL_NAME
                               when :repl_set then REPL_SET_OPLOG_COLL_NAME
                               else ""
@@ -364,32 +367,26 @@ module MongoSolr
 
       if oplog_collection_name.empty? then
         # Try to figure out which collection exists in the database
-        candidate_coll_names = []
+        candidate_coll = []
 
         begin
-          @mode = :master_slave
-          get_oplog_collection
+          candidate_coll << get_oplog_collection(:master_slave)
         rescue OplogException
           # Do nothing
-        else
-          candidate_coll_names << MASTER_SLAVE_OPLOG_COLL_NAME
         end
 
         begin
-          @mode = :repl_set
-          get_oplog_collection
+          candidate_coll << get_oplog_collection(:repl_set)
         rescue OplogException
           # Do nothing
-        else
-          candidate_coll_names << REPL_SET_OPLOG_COLL_NAME
         end
 
-        if candidate_coll_names.empty? then
+        if candidate_coll.empty? then
           raise OplogException, OPLOG_NOT_FOUND_MSG
-        elsif candidate_coll_names.size > 1 then
+        elsif candidate_coll.size > 1 then
           raise OplogException, OPLOG_AMBIGUOUS_MSG
         else
-          oplog_coll = oplog_db.collection(candidate_coll_names.first)
+          oplog_coll = candidate_coll.first
         end
       else
         begin

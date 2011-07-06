@@ -129,6 +129,38 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       end
     end
 
+    should "not update after stopped." do
+      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE)
+      solr.logger = DEFAULT_LOGGER
+
+      @solr.expects(:add).never
+      @solr.stubs(:commit)
+
+      solr.sync { solr.stop! }
+      @test_coll1.insert({ "lang" => "Ruby" })
+    end
+
+    should "sync after several cycles of start/stop." do
+      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE)
+      solr.logger = DEFAULT_LOGGER
+
+      @solr.expects(:add).never
+      @solr.stubs(:commit)
+
+      solr.sync { solr.stop! }
+      solr.sync { solr.stop! }
+
+      @solr.expects(:add).once
+
+      solr.sync do |mode, doc_count|
+        if mode == :finished_dumping then
+          @test_coll1.insert({ "msg" => "Hello world!" })
+        elsif mode == :sync then
+          break
+        end
+      end
+    end
+
     context "selective indexing" do
       setup do
         @db = DB_CONNECTION.db(TEST_DB)
