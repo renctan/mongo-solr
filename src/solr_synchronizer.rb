@@ -115,6 +115,8 @@ module MongoSolr
     #
     # @option opt [number] :interval (1) The interval in seconds to wait before checking for
     #    new updates in the database
+    # @option opt [number] :err_retry_interval (1) The interval in seconds to retry again
+    #    after encountering an error in the Solr server or MongoDB instance.
     #
     # @param block [Proc(mode, doc_count)] An optional  procedure that will be called during
     #   certain conditions:
@@ -122,6 +124,8 @@ module MongoSolr
     #   1. block(:finished_dumping, 0) will be called after dumping the contents of the database.
     #   2. block(:sync, doc_count) will be called everytime Solr is updated from the oplog.
     #      doc_count contains the number of docs synched with Solr so far.
+    #   3. block(:excep, doc_count) will be called everytime an exception occured while trying
+    #      to update Solr.
     #
     # @raise [OplogException]
     #
@@ -160,6 +164,7 @@ module MongoSolr
       yield :finished_dumping, 0 if block_given?
 
       update_interval = opt[:interval] || 1
+      err_retry_interval = opt[:err_retry_interval] || 1
       doc_count = 0
 
       loop do
@@ -180,7 +185,15 @@ module MongoSolr
           return if stop_synching?
         end
 
-        update_solr(doc_batch)
+        begin
+          update_solr(doc_batch)
+        rescue => e
+          @logger.error "#{@name}: #{e.message}"
+          sleep err_retry_interval
+          yield :excep, doc_count if block_given?
+          retry
+        end
+
         yield :sync, doc_count if block_given?
 
         sleep update_interval

@@ -161,6 +161,49 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       end
     end
 
+    should "continue on running when an exception happened in solr/mongo and log it" do
+      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE)
+      mock_logger = mock()
+      mock_logger.stubs(:info)
+      mock_logger.stubs(:debug)
+      mock_logger.expects(:error).never
+      solr.logger = mock_logger
+
+      @solr.stubs(:commit)
+
+      solr.sync do |mode, doc_count|
+        if mode == :finished_dumping then
+          @solr.stubs(:add).raises(RuntimeError, "intentional error")
+          mock_logger.expects(:error).once
+          @test_coll1.insert({ "lang" => "Ruby" })
+        elsif mode == :excep then
+          break
+        end
+      end
+    end
+
+    should "properly continue after recovering from error" do
+      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE)
+      mock_logger = mock()
+      mock_logger.stubs(:info)
+      mock_logger.stubs(:debug)
+      mock_logger.stubs(:error)
+      solr.logger = mock_logger
+
+      @solr.stubs(:commit)
+
+      solr.sync do |mode, doc_count|
+        if mode == :finished_dumping then
+          @solr.stubs(:add).raises(RuntimeError, "intentional error")
+          @test_coll1.insert({ "lang" => "Ruby" })
+        elsif mode == :excep then
+          @solr.expects(:add).once
+        else
+          break
+        end
+      end
+    end
+
     context "selective indexing" do
       setup do
         @db = DB_CONNECTION.db(TEST_DB)
