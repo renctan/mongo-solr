@@ -45,12 +45,12 @@ module MongoSolr
         end
 
         opts.separator ""
-        opts.on("-m", "--mode MODE", "ms for master/slave or rset for",
+        opts.on("-m", "--mode MODE", "ms for master/slave or rs for",
                 "replica set. Tries to automatically",
                 "detect which mode to use by default.") do |mode|
           options.mode = case mode
                          when "ms" then :master_slave
-                         when "rset" then :repl_set
+                         when "rs" then :repl_set
                          else :unknown
                          end
         end
