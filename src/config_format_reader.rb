@@ -14,15 +14,6 @@ module MongoSolr
       @config_data[SOLR_URL_KEY]
     end
 
-    # @return [Symbol] the mode for the Mongo
-    def get_mongo_mode
-      case @config_data[MONGO_MODE_KEY]
-      when "rs" then :repl_set
-      when "ms" then :master_slave
-      else :auto
-      end
-    end
-
     # Converts the config data object to a format recognized by
     # MongoSolr::SolrSynchronizer#update_db_set
     #
@@ -30,10 +21,8 @@ module MongoSolr
     def get_db_set
       db_set = {}
 
-      @config_data[DB_LIST_KEY].each do |db_entry|
-        db_name = db_entry[DB_NAME_KEY]
-        coll = Set.new(db_entry[COLL_LIST_KEY].map { |doc| doc[COLL_NAME_KEY] })
-        db_set[db_name] = coll
+      @config_data[DB_LIST_KEY].each do |db_name, db_entry|
+        db_set[db_name] = Set.new(db_entry.keys)
       end
 
       return db_set
@@ -41,11 +30,7 @@ module MongoSolr
 
     private
     SOLR_URL_KEY = "url"
-    MONGO_MODE_KEY = "m"
     DB_LIST_KEY = "dbs"
-    COLL_LIST_KEY = "colls"
-    DB_NAME_KEY = "n"
-    COLL_NAME_KEY = "n"
   end
 end
 

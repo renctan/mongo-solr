@@ -6,12 +6,10 @@ class ConfigFormatReaderTest < Test::Unit::TestCase
   SAMPLE_ENTRY = {
     "url" => SAMPLE_SOLR_LOC,
     "m" => "auto",
-    "dbs" => [
-              { "n" => "courses",
-                "colls" => [{"n" => "undergrad"}, {"n" => "masters"}, {"n" => "doctoral"}]},
-              { "n" => "staff",
-                "colls" => [{"n" => "prof"}, {"n" => "admin"}]}
-             ]
+    "dbs" => {
+      "courses" => { "undergrad" => [], "masters" => [], "doctoral" => [] },
+      "staff" => { "prof" => [], "admin" => [] }
+    }
   }
 
   context "basic test" do
@@ -21,10 +19,6 @@ class ConfigFormatReaderTest < Test::Unit::TestCase
 
     should "extract solr location correctly" do
       assert_equal(SAMPLE_SOLR_LOC, @reader.get_solr_loc)
-    end
-
-    should "extract mode correctly" do
-      assert_equal(:auto, @reader.get_mongo_mode)
     end
 
     should "extract db_set correctly" do
