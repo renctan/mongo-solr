@@ -18,10 +18,10 @@ var MSolrDb = function ( configColl, serverLocation, dbName ){
  * Add all collections under this database for indexing.
  */
 MSolrDb.prototype.indexAll = function (){
-  var coll_names = this.getMongo().getDB(this.dbName).getCollectionNames();
+  var coll_names = this.configColl.getMongo().getDB(this.dbName).getCollectionNames();
 
   for (var x = coll_names.length; x--;) {
-    add(coll_names[x]);
+    this.index( coll_names[x] );
   }
 };
 

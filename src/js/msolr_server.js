@@ -27,6 +27,9 @@ MSolrServer.prototype.db = function ( dbName ) {
  * @param {String} dbName The name of the database.
  */
 MSolrServer.prototype.removeDB = function ( dbName ) {
-  this.configColl.update( this.criteria, { $unset: {dbName: 1} } );
+  var docField = {};
+  docField[MSolrConst.DB_LIST_KEY + "." + dbName] = 1;
+
+  this.configColl.update( this.criteria, { $unset: docField } );
 };
 

@@ -11,43 +11,50 @@ load("msolr_db.js");
 
 /**
  * Creates a simple class that is connected to the mongo-solr configuration server.
+ * 
+ * @param {string} configDBName Optional parameter for specifying the name of the
+ *   configuration database for mongo-solr
+ * @param {string} configCollName Optional parameter for specifying the name of the
+ *   configuration collection for mongo-solr
  */
-var MSolr = function (){
+var MSolr = function ( configDBName, configCollName ){
+  var dbName = configDBName || MSolr.getConfigDBName( conn );
+  var collName = configCollName || MSolrConst.MONGO_SOLR_COLLECTION_NAME;
   var conn = new Mongo();
   var ensureIdxCriteria = {};
 
-  /**
-   * Determines which database to use when storing the configuration information.
-   *
-   * @param {Mongo} mongo The connection to the database.
-   *
-   * @return {String} The name of the database to use.
-   */
-  var getConfigDBName = function ( mongo ) {
-    var dbList;
-    var configDBFound = false;
-    var ret = "config";
-
-    dbList = mongo.getDBs().databases;
-    for ( var x = dbList.length; x--; ) {
-      if ( dbList[x].name == "config" ) {
-        configDBFound = true;
-        break;
-      }
-    }
-
-    if ( ! configDBFound ) {
-      ret = "local";
-    }
-
-    return ret;
-  };
-
-  this.coll = conn.getDB( getConfigDBName( conn ) ).
-    getCollection( MSolrConst.MONGO_SOLR_COLLECTION_NAME );
+  this.coll = conn.getDB( dbName ).getCollection( collName );
   ensureIdxCriteria[MSolrConst.SOLR_URL_KEY] = 1;
   this.coll.ensureIndex( ensureIdxCriteria, { "unique": true } );
 };
+
+/**
+ * Determines which database to use when storing the configuration information.
+ *
+ * @param {Mongo} mongo The connection to the database.
+ *
+ * @return {String} The name of the database to use.
+ */
+MSolr.getConfigDBName = function ( mongo ) {
+  var dbList;
+  var configDBFound = false;
+  var ret = "config";
+
+  dbList = mongo.getDBs().databases;
+  for ( var x = dbList.length; x--; ) {
+    if ( dbList[x].name == "config" ) {
+      configDBFound = true;
+      break;
+    }
+  }
+
+  if ( ! configDBFound ) {
+    ret = "local";
+  }
+
+  return ret;
+};
+
 
 /**
  * Gets the settings of all indexing servers.
