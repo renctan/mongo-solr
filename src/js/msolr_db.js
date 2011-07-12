@@ -1,11 +1,11 @@
 /**
  * Creates a helper class that updates the index configuration of a database.
  * 
- * @param configColl [Collection] The collection that contains the configuration info.
- * @param serverLocation [String] The location of the Solr server.
- * @param dbName [String] The name of the database.
+ * @param {Collection} configColl The collection that contains the configuration info.
+ * @param {String} serverLocation The location of the Solr server.
+ * @param {String} dbName The name of the database.
  */
-var MSolrDb = function( configColl, serverLocation, dbName ){
+var MSolrDb = function ( configColl, serverLocation, dbName ){
   this.configColl = configColl;
   this.serverLocation = serverLocation;
   this.dbName = dbName;
@@ -17,7 +17,7 @@ var MSolrDb = function( configColl, serverLocation, dbName ){
 /**
  * Add all collections under this database for indexing.
  */
-MSolrDb.prototype.addAll = function(){
+MSolrDb.prototype.indexAll = function (){
   var coll_names = this.getMongo().getDB(this.dbName).getCollectionNames();
 
   for (var x = coll_names.length; x--;) {
@@ -28,13 +28,13 @@ MSolrDb.prototype.addAll = function(){
 /**
  * Add a collection to index.
  * 
- * @param coll [String] The name of the collection to index.
- * @param field [String] (null) The name of the specific field to index. (Not yet supported)
+ * @param {String} coll The name of the collection to index.
+ * @param {String} [field = null] The name of the specific field to index. (Not yet supported)
  * 
  * Warning: Passing a null to the field will delete all previous field settings for that
  * collection.
  */
-MSolrDb.prototype.add = function( coll, field ){
+MSolrDb.prototype.index = function ( coll, field ){
   var elemKey = this.keyPrefix + coll;
   var docField = {};
 
@@ -51,9 +51,9 @@ MSolrDb.prototype.add = function( coll, field ){
 /**
  * Removes a collection from being indexed.
  * 
- * @param coll [String] The name of the collection to remove.
+ * @param {String} coll The name of the collection to remove.
  */
-MSolrDb.prototype.remove = function( coll ){
+MSolrDb.prototype.remove = function ( coll ){
   var elemKey = this.keyPrefix + coll;
   var docField = {};
 

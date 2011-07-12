@@ -1,10 +1,10 @@
 /**
  * Creates a simple class that represents a Solr Server configuration.
  * 
- * @param configColl [Collection] The collection that contains the configuration info.
- * @param loc [String] The location of the Solr Server.
+ * @param {Collection} configColl The collection that contains the configuration info.
+ * @param {String} loc The location of the Solr Server.
  */
-var MSolrServer = function( configColl, loc ) {
+var MSolrServer = function ( configColl, loc ) {
   this.configColl = configColl;
   this.loc = loc;
 
@@ -15,20 +15,18 @@ var MSolrServer = function( configColl, loc ) {
 /**
  * Gets a database configuration for this server.
  * 
- * @param dbName [String] The name of the database to add
- * @param doIncludeAllCollection [Boolean] (true) Whether to index all the collections
- *   under the new database.
+ * @param {String} dbName The name of the database to get.
  */
-MSolrServer.prototype.db = function( dbName ) {
+MSolrServer.prototype.db = function ( dbName ) {
   return new MSolrDb( this.configColl, this.loc, dbName );
 };
 
 /**
  * Removes a database from indexing.
  * 
- * @param dbName [String] The name of the database.
+ * @param {String} dbName The name of the database.
  */
-MSolrServer.prototype.removeDB = function( dbName ) {
+MSolrServer.prototype.removeDB = function ( dbName ) {
   this.configColl.update( this.criteria, { $unset: {dbName: 1} } );
 };
 

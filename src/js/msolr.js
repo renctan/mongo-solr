@@ -12,18 +12,18 @@ load("msolr_db.js");
 /**
  * Creates a simple class that is connected to the mongo-solr configuration server.
  */
-var MSolr = function(){
+var MSolr = function (){
   var conn = new Mongo();
   var ensureIdxCriteria = {};
 
   /**
    * Determines which database to use when storing the configuration information.
    *
-   * @param mongo [Mongo] The connection to the database.
+   * @param {Mongo} mongo The connection to the database.
    *
-   * @return [String] The name of the database to use.
+   * @return {String} The name of the database to use.
    */
-  var getConfigDBName = function( mongo ) {
+  var getConfigDBName = function ( mongo ) {
     var dbList;
     var configDBFound = false;
     var ret = "config";
@@ -52,18 +52,18 @@ var MSolr = function(){
 /**
  * Gets the settings of all indexing servers.
  * 
- * @return [Array] The list of server settings.
+ * @return {Array} The list of server settings.
  */
-MSolr.prototype.listServers = function() {
+MSolr.prototype.listServers = function () {
   return this.coll.find();
 };
 
 /**
  * Adds a new Solr server configuration.
  * 
- * @param location [String] The location of the server.
+ * @param {String} location The location of the server.
  */
-MSolr.prototype.addServer = function( location ) {
+MSolr.prototype.addServer = function ( location ) {
   var criteria = {};
   criteria[MSolrConst.SOLR_URL_KEY] = location;
 
@@ -77,10 +77,10 @@ MSolr.prototype.addServer = function( location ) {
 /**
  * Change the url of a server to a new url.
  * 
- * @param originalUrl [String] The original url.
- * @param newUrl [String] The new url.
+ * @param {String} originalUrl The original url.
+ * @param {String} newUrl The new url.
  */
-MSolr.prototype.changeUrl = function( originalUrl, newUrl ) {
+MSolr.prototype.changeUrl = function ( originalUrl, newUrl ) {
   var criteria = {};
   var docField = {};
 
@@ -92,9 +92,9 @@ MSolr.prototype.changeUrl = function( originalUrl, newUrl ) {
 /**
  * Delete a indexing server configuration.
  * 
- * @param location [String] The location of the server.
+ * @param {String} location The location of the server.
  */
-MSolr.prototype.removeServer = function( location ) {
+MSolr.prototype.removeServer = function ( location ) {
   var criteria = {};
   criteria[MSolrConst.SOLR_URL_KEY] = location;
   this.coll.remove( criteria );
@@ -103,11 +103,11 @@ MSolr.prototype.removeServer = function( location ) {
 /**
  * Get the server configuration object.
  * 
- * @param location [String] The location of the server.
+ * @param {String} location The location of the server.
  * 
- * @return [MSolrServer] the server object.
+ * @return {MSolrServer} the server object.
  */
-MSolr.prototype.getServer = function( location ) {
+MSolr.prototype.getServer = function ( location ) {
   return new MSolrServer( this.coll, location );
 };
 
