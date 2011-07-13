@@ -18,9 +18,9 @@ load("msolr_db.js");
  *   configuration collection for mongo-solr
  */
 var MSolr = function ( configDBName, configCollName ){
+  var conn = new Mongo();
   var dbName = configDBName || MSolr.getConfigDBName( conn );
   var collName = configCollName || MSolrConst.MONGO_SOLR_COLLECTION_NAME;
-  var conn = new Mongo();
   var ensureIdxCriteria = {};
 
   this.coll = conn.getDB( dbName ).getCollection( collName );
@@ -73,12 +73,8 @@ MSolr.prototype.listServers = function () {
 MSolr.prototype.addServer = function ( location ) {
   var criteria = {};
   criteria[MSolrConst.SOLR_URL_KEY] = location;
-
-  var existingServer = this.coll.findOne( criteria );
-
-  if ( existingServer == null ){
-    this.coll.insert( criteria );
-  }
+  // Assumption: SOLR_URL_KEY values are unique -> currently enforced by the constructor.
+  this.coll.insert( criteria );
 };
 
 /**
