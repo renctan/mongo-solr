@@ -9,7 +9,7 @@ var pathPrefix = "../../src/js/";
 load(pathPrefix + "msolr_const.js");
 load(pathPrefix + "msolr_db.js");
 load(pathPrefix + "msolr.js");
-load("../js_test_helper.js");
+load("../jstester.js");
 
 var CONFIG_DB_NAME = "MSolrDBTestConfigDB";
 var CONFIG_COLL_NAME = "MSolrDBConfigColl";
@@ -27,88 +27,76 @@ var TEST_DB_1_COLL = ["ab", "cd", "ef", "gh"];
   }
 })();
 
-(function () {
-  var solrDB;
-  var mongoConn_ = new Mongo();
-  var configDB_ = mongoConn_.getDB( CONFIG_DB_NAME );
-  var configColl_;
+var MSolrDBTest = function () {
+  this.solrDB = null;
+  this.mongoConn = new Mongo();
+  this.configDB = this.mongoConn.getDB( CONFIG_DB_NAME );
+  this.configColl = null;
 
-  var serverConfigCriteria_ = {};
-  serverConfigCriteria_[MSolrConst.SOLR_URL_KEY] = SOLR_SERVER_LOC;
+  this.serverConfigCriteria = {};
+  this.serverConfigCriteria[MSolrConst.SOLR_URL_KEY] = SOLR_SERVER_LOC;
+};
 
-  var setup = function () {
-    configColl_ = configDB_.getCollection( CONFIG_COLL_NAME );
-    configColl_.insert( serverConfigCriteria_ );
-    solrDB = new MSolrDb( configColl_, SOLR_SERVER_LOC, TEST_DB_1_NAME );
-  };
+MSolrDBTest.prototype.setup = function () {
+  this.configColl = this.configDB.getCollection( CONFIG_COLL_NAME );
+  this.configColl.insert( this.serverConfigCriteria );
+  this.solrDB = new MSolrDb( this.configColl, SOLR_SERVER_LOC, TEST_DB_1_NAME );
+};
 
-  var teardown = function () {
-    configDB_.dropDatabase();
-  };
+MSolrDBTest.prototype.teardown = function () {
+  this.configDB.dropDatabase();
+};
 
-  /**
-   * Runs the test with the proper hooks.
-   * 
-   * @param {Function} testFunc The test function to run.
-   */
-  var runTest = function ( testFunc ) {
-    setup();
-    MSolrJSTestHelper.test( testFunc );
-    teardown();
-  };
+MSolrDBTest.prototype.indexAllShouldIncludeAllCollectionTest = function () {
+  var configDoc;
+  var indexedColl;
+  var indexResult;
 
-  var indexAllShouldIncludeAllCollectionTest = function () {
-    var configDoc;
-    var indexedColl;
-    var indexResult;
+  this.solrDB.indexAll();
+  this.configDB.getLastError();
 
-    solrDB.indexAll();
-    configDB_.getLastError();
+  configDoc = this.configColl.findOne( this.serverConfigCriteria );
+  indexedColl = configDoc[MSolrConst.DB_LIST_KEY][TEST_DB_1_NAME];
 
-    configDoc = configColl_.findOne( serverConfigCriteria_ );
-    indexedColl = configDoc[MSolrConst.DB_LIST_KEY][TEST_DB_1_NAME];
+  // TODO: Find a better way to check membership equality in js
+  for( var x = TEST_DB_1_COLL.length; x--;  ) {
+    assert.neq( undefined, indexedColl[TEST_DB_1_COLL[x]] );
+  }
+};
 
-    // TODO: Find a better way to check membership equality in js
-    for( var x = TEST_DB_1_COLL.length; x--;  ) {
-      assert.neq( undefined, indexedColl[TEST_DB_1_COLL[x]] );
-    }
-  };
+MSolrDBTest.prototype.indexShouldAddOneCollectionTest = function () {
+  var configDoc;
+  var indexResult;
+  var newIndex = "qwerty";
 
-  var indexShouldAddOneCollectionTest = function () {
-    var configDoc;
-    var indexResult;
-    var newIndex = "qwerty";
+  this.solrDB.index( newIndex );
+  this.configDB.getLastError();
 
-    solrDB.index( newIndex );
-    configDB_.getLastError();
+  configDoc = this.configColl.findOne( this.serverConfigCriteria );
+  indexedColl = configDoc[MSolrConst.DB_LIST_KEY][TEST_DB_1_NAME];
 
-    configDoc = configColl_.findOne( serverConfigCriteria_ );
-    indexedColl = configDoc[MSolrConst.DB_LIST_KEY][TEST_DB_1_NAME];
+  // TODO: Find a better way to check membership equality in js
+  assert.neq( undefined, indexedColl[newIndex] );
+};
 
-    // TODO: Find a better way to check membership equality in js
-    assert.neq( undefined, indexedColl[newIndex] );
-  };
+MSolrDBTest.prototype.removeIndexTest = function () {
+  var configDoc;
+  var indexResult;
+  var newIndex = "qwerty";
+  var indexedColl;
 
-  var removeIndexTest = function () {
-    var configDoc;
-    var indexResult;
-    var newIndex = "qwerty";
+  this.solrDB.index( newIndex );
+  this.solrDB.remove( newIndex );
+  this.configDB.getLastError();
 
-    solrDB.index( newIndex );
-    solrDB.remove( newIndex );
-    configDB_.getLastError();
+  configDoc = this.configColl.findOne( this.serverConfigCriteria );
+  indexedColl = configDoc[MSolrConst.DB_LIST_KEY][TEST_DB_1_NAME];
 
-    configDoc = configColl_.findOne( serverConfigCriteria_ );
-    indexedColl = configDoc[MSolrConst.DB_LIST_KEY][TEST_DB_1_NAME];
+  // TODO: Find a better way to check membership equality in js
+  assert.eq( undefined, indexedColl[newIndex] );
+};
 
-    // TODO: Find a better way to check membership equality in js
-    assert.eq( undefined, indexedColl[newIndex] );
-  };
-
-  runTest( indexAllShouldIncludeAllCollectionTest );
-  runTest( indexShouldAddOneCollectionTest );
-  runTest( removeIndexTest );
-})();
+JSTester.run( new MSolrDBTest() );
 
 // Global Teardown
 (function () {
