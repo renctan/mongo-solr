@@ -1,7 +1,6 @@
 /**
  * Simple helper class for testing javascript functions inside the Mongo Shell.
  */
-
 var JSTester = {
   /**
    * Runs all the test of a given test object.

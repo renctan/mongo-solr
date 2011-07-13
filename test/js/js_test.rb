@@ -1,14 +1,15 @@
 #! /usr/local/bin/ruby
 
-# A simple script for running all the js tests.
+# A simple script for running all the js tests. This should be executed on the same
+# directory where this script is located.
 
 # Load the test script on the Mongo Shell environment and execute it.
 #
-# @param file [string] The file name of the test script.
+# @param file [String] The file name of the test script.
 def do_test(file)
-    puts "Testing #{file} ============================="
-    puts `mongo --eval \"load(\\\"#{file}\\\")\"`
-    puts ""
+  puts "Testing #{file} ============================="
+  puts `mongo --eval \"load(\\\"#{file}\\\")\"`
+  puts ""
 end
 
 if __FILE__ == $0 then
