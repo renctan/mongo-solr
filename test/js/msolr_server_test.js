@@ -45,8 +45,7 @@ MSolrServerTest.prototype.dbTest = function () {
   var solrDB = this.solr.db( TEST_DB_1_NAME );
 
   // Needs to create a collection in order to have the database created.
-  solrDB.index( "dummy" );
-  this.configDB.getLastError();
+  solrDB.index( "dummy", true );
 
   configDoc = this.configColl.findOne( this.serverConfigCriteria );
   indexedDB = configDoc[MSolrConst.DB_LIST_KEY];
@@ -63,8 +62,7 @@ MSolrServerTest.prototype.removeDBwithOneDBExistingTest = function () {
 
   // Needs to create a collection in order to have the database created.
   solrDB.index( "dummy" );
-  this.solr.removeDB( TEST_DB_1_NAME );
-  this.configDB.getLastError();
+  this.solr.removeDB( TEST_DB_1_NAME, true );
 
   configDoc = this.configColl.findOne( this.serverConfigCriteria );
   indexedDB = configDoc[MSolrConst.DB_LIST_KEY];
@@ -82,8 +80,7 @@ MSolrServerTest.prototype.removeDBwithTwoDBExistingTest = function () {
   this.solr.db( TEST_DB_1_NAME ).index( "dummy" );
   this.solr.db( TEST_DB_2_NAME ).index( "another_dummy" );
 
-  this.solr.removeDB( TEST_DB_1_NAME );
-  this.configDB.getLastError();
+  this.solr.removeDB( TEST_DB_1_NAME, true );
 
   configDoc = this.configColl.findOne( this.serverConfigCriteria );
   indexedDB = configDoc[MSolrConst.DB_LIST_KEY];

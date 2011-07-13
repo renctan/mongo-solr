@@ -23,7 +23,8 @@ var MSolr = function ( configDBName, configCollName ){
   var collName = configCollName || MSolrConst.MONGO_SOLR_COLLECTION_NAME;
   var ensureIdxCriteria = {};
 
-  this.coll = conn.getDB( dbName ).getCollection( collName );
+  this.db = conn.getDB( dbName );
+  this.coll = this.db.getCollection( collName );
   ensureIdxCriteria[MSolrConst.SOLR_URL_KEY] = 1;
   this.coll.ensureIndex( ensureIdxCriteria, { "unique": true } );
 };
@@ -55,7 +56,6 @@ MSolr.getConfigDBName = function ( mongo ) {
   return ret;
 };
 
-
 /**
  * Gets the settings of all indexing servers.
  * 
@@ -69,12 +69,19 @@ MSolr.prototype.listServers = function () {
  * Adds a new Solr server configuration.
  * 
  * @param {String} location The location of the server.
+ * @param {Boolean} wait Wait till the operation completes before returning. false by default.
  */
-MSolr.prototype.addServer = function ( location ) {
+MSolr.prototype.addServer = function ( location, wait ) {
   var criteria = {};
+  var doWait = wait || false;
+
   criteria[MSolrConst.SOLR_URL_KEY] = location;
   // Assumption: SOLR_URL_KEY values are unique -> currently enforced by the constructor.
   this.coll.insert( criteria );
+
+  if ( doWait ) {
+    this.db.getLastError();
+  }
 };
 
 /**
@@ -82,25 +89,38 @@ MSolr.prototype.addServer = function ( location ) {
  * 
  * @param {String} originalUrl The original url.
  * @param {String} newUrl The new url.
+ * @param {Boolean} wait Wait till the operation completes before returning. false by default.
  */
-MSolr.prototype.changeUrl = function ( originalUrl, newUrl ) {
+MSolr.prototype.changeUrl = function ( originalUrl, newUrl, wait ) {
   var criteria = {};
   var docField = {};
+  var doWait = wait || false;
 
   criteria[MSolrConst.SOLR_URL_KEY] = originalUrl;
   docField[MSolrConst.SOLR_URL_KEY] = newUrl;
   this.coll.update( criteria, { $set: docField } );
+
+  if ( doWait ) {
+    this.db.getLastError();
+  }
 };
 
 /**
  * Delete a indexing server configuration.
  * 
  * @param {String} location The location of the server.
+ * @param {Boolean} wait Wait till the operation completes before returning. false by default.
  */
-MSolr.prototype.removeServer = function ( location ) {
+MSolr.prototype.removeServer = function ( location, wait ) {
   var criteria = {};
+  var doWait = wait || false;
+
   criteria[MSolrConst.SOLR_URL_KEY] = location;
   this.coll.remove( criteria );
+
+  if ( doWait ) {
+    this.db.getLastError();
+  }
 };
 
 /**

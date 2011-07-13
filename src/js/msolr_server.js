@@ -6,6 +6,7 @@
  */
 var MSolrServer = function ( configColl, loc ) {
   this.configColl = configColl;
+  this.configDB = configColl.getDB();
   this.loc = loc;
 
   this.criteria = {};
@@ -25,11 +26,17 @@ MSolrServer.prototype.db = function ( dbName ) {
  * Removes a database from indexing.
  * 
  * @param {String} dbName The name of the database.
+ * @param {Boolean} wait Wait till the operation completes before returning. false by default.
  */
-MSolrServer.prototype.removeDB = function ( dbName ) {
+MSolrServer.prototype.removeDB = function ( dbName, wait ) {
   var docField = {};
-  docField[MSolrConst.DB_LIST_KEY + "." + dbName] = 1;
+  var doWait = wait || false;
 
+  docField[MSolrConst.DB_LIST_KEY + "." + dbName] = 1;
   this.configColl.update( this.criteria, { $unset: docField } );
+
+  if ( doWait ) {
+    this.configDB.getLastError();
+  }
 };
 

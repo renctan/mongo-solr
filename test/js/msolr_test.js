@@ -9,129 +9,150 @@ var pathPrefix = "../../src/js/";
 load(pathPrefix + "msolr_const.js");
 load(pathPrefix + "msolr_server.js");
 load(pathPrefix + "msolr.js");
-load("../js_test_helper.js");
+load("../jstester.js");
 
 var CONFIG_DB_NAME = "MSolrTestConfigDB";
 var CONFIG_COLL_NAME = "MSolrConfigColl";
 var SOLR_SERVER1_LOC = "http://mongo.solr.net/solr";
 var SOLR_SERVER2_LOC = "http://another.solr.server/solr";
 
-(function () {
-  var msolr;
-  var mongoConn_ = new Mongo();
-  var configDB_ = mongoConn_.getDB( CONFIG_DB_NAME );
-  var configColl_;
+var MSolrTest = function () {
+  this.mongoConn = new Mongo();
+  this.configDB = this.mongoConn.getDB( CONFIG_DB_NAME );
+  this.configColl = null;
+  this.msolr = null;
+};
 
-  var setup = function () {
-    configDB_.createCollection( CONFIG_COLL_NAME );
-    configColl_ = configDB_.getCollection( CONFIG_COLL_NAME );
-    msolr = new MSolr( CONFIG_DB_NAME, CONFIG_COLL_NAME );
+MSolrTest.prototype.setup = function () {
+  this.configDB = this.mongoConn.getDB( CONFIG_DB_NAME );
+  this.configDB.createCollection( CONFIG_COLL_NAME );
+  this.configColl = this.configDB.getCollection( CONFIG_COLL_NAME );
+  this.msolr = new MSolr( CONFIG_DB_NAME, CONFIG_COLL_NAME );
+};
+
+MSolrTest.prototype.teardown = function () {
+  this.configDB.dropDatabase();
+};
+
+MSolrTest.prototype.getConfigIfAvailableTest = function () {
+  var mockMongo = {
+    getDBs: function () {
+      return {
+        databases: [
+          {
+            "name" : "test",
+            "sizeOnDisk" : 67108864,
+            "empty" : false
+          },
+          {
+            "name" : "admin",
+            "sizeOnDisk" : 67108864,
+            "empty" : false
+          },
+          {
+            "name" : "config",
+            "sizeOnDisk" : 67108864,
+            "empty" : false
+          },
+          {
+            "name" : "local",
+            "sizeOnDisk" : 134217728,
+            "empty" : false
+          }
+        ]
+      };
+    }
   };
 
-  var teardown = function () {
-    configDB_.dropDatabase();
+  assert.eq( "config", MSolr.getConfigDBName( mockMongo ));
+};
+
+MSolrTest.prototype.getLocalIfConfigNotFoundTest = function () {
+  var mockMongo = {
+    getDBs: function () {
+      return {
+        databases: [
+          {
+            "name" : "test",
+            "sizeOnDisk" : 67108864,
+            "empty" : false
+          },
+          {
+            "name" : "admin",
+            "sizeOnDisk" : 67108864,
+            "empty" : false
+          }
+        ]
+      };
+    }
   };
 
-  /**
-   * Runs the test with the proper hooks.
-   * 
-   * @param {Function} testFunc The test function to run.
-   */
-  var runTest = function ( testFunc ) {
-    setup();
-    MSolrJSTestHelper.test( testFunc );
-    teardown();
-  };
+  assert.eq( "local", MSolr.getConfigDBName( mockMongo ) );
+};
 
-  var getConfigIfAvailableTest = function () {
-    var mockMongo = {
-      getDBs: function () {
-        return {
-          databases: [
-            {
-              "name" : "test",
-              "sizeOnDisk" : 67108864,
-              "empty" : false
-            },
-            {
-              "name" : "admin",
-              "sizeOnDisk" : 67108864,
-              "empty" : false
-            },
-            {
-              "name" : "config",
-              "sizeOnDisk" : 67108864,
-              "empty" : false
-            },
-            {
-              "name" : "local",
-              "sizeOnDisk" : 134217728,
-              "empty" : false
-            }
-          ]
-        };
-      }
-    };
+MSolrTest.prototype.addServerTest = function () {
+  var serverConfigCriteria = {};
+  var doc;
 
-    assert.eq( "config", MSolr.getConfigDBName( mockMongo ));
-  };
+  this.msolr.addServer( SOLR_SERVER1_LOC, true );
 
-  var getLocalIfConfigNotFoundTest = function () {
-    var mockMongo = {
-      getDBs: function () {
-        return {
-          databases: [
-            {
-              "name" : "test",
-              "sizeOnDisk" : 67108864,
-              "empty" : false
-            },
-            {
-              "name" : "admin",
-              "sizeOnDisk" : 67108864,
-              "empty" : false
-            }
-          ]
-        };
-      }
-    };
+  serverConfigCriteria[MSolrConst.SOLR_URL_KEY] = SOLR_SERVER1_LOC;
+  doc = this.configColl.findOne( serverConfigCriteria );
 
-    assert.eq( "local", MSolr.getConfigDBName( mockMongo ) );
-  };
+  assert.eq( SOLR_SERVER1_LOC, doc[MSolrConst.SOLR_URL_KEY] );
+};
 
-  var addServerTest = function () {
-    // TODO: implement
-  };
+MSolrTest.prototype.basicChangeUrlTest = function () {
+  var doc;
 
-  var changeUrlTest = function () {
-    // TODO: implement
-  };
+  this.msolr.addServer( SOLR_SERVER1_LOC );
+  this.msolr.changeUrl( SOLR_SERVER1_LOC, SOLR_SERVER2_LOC, true );
 
-  var removeServerTest = function () {
-    var serverConfigCriteria_ = {};
-    var doc;
+  doc = this.configColl.findOne();
 
-    msolr.addServer( SOLR_SERVER1_LOC );
-    msolr.removeServer( SOLR_SERVER1_LOC );
-    configDB_.getLastError();
+  assert.eq( SOLR_SERVER2_LOC, doc[MSolrConst.SOLR_URL_KEY] );
+};
 
-    serverConfigCriteria_[MSolrConst.SOLR_URL_KEY] = SOLR_SERVER1_LOC;
-    doc = configColl_.findOne( serverConfigCriteria_ );
+MSolrTest.prototype.changeUrlWithNonExistingOriginalUrlTest = function () {
+  var doc;
+  var cursor;
 
-    assert.eq( null, doc );
-  };
+  this.msolr.addServer( SOLR_SERVER1_LOC );
+  this.msolr.changeUrl( SOLR_SERVER2_LOC, "Hilfe", true );
 
-  var removeServerWithTwoServersTest = function () {
-    // TODO: implement
-  };
+  cursor = this.configColl.find();
+  cursor.forEach( function ( doc ) { // There should be only one result
+    assert.eq( SOLR_SERVER1_LOC, doc[MSolrConst.SOLR_URL_KEY] );
+  });
+};
 
-  runTest( getConfigIfAvailableTest );
-  runTest( getLocalIfConfigNotFoundTest );
-  runTest( addServerTest );
-  runTest( changeUrlTest );
-  runTest( removeServerTest );
-  runTest( removeServerWithTwoServersTest );
-})();
+MSolrTest.prototype.removeServerTest = function () {
+  var serverConfigCriteria = {};
+  var doc;
+
+  this.msolr.addServer( SOLR_SERVER1_LOC );
+  this.msolr.removeServer( SOLR_SERVER1_LOC, true );
+
+  serverConfigCriteria[MSolrConst.SOLR_URL_KEY] = SOLR_SERVER1_LOC;
+  doc = this.configColl.findOne( serverConfigCriteria );
+
+  assert.eq( null, doc );
+};
+
+MSolrTest.prototype.removeServerWithTwoServersTest = function () {
+  var cursor;
+
+  this.msolr.addServer( SOLR_SERVER1_LOC );
+  this.msolr.addServer( SOLR_SERVER2_LOC );
+  this.msolr.removeServer( SOLR_SERVER1_LOC, true );
+
+  cursor = this.configColl.find();
+  cursor.forEach( function ( doc ) { // There should be only one result
+    assert.eq( SOLR_SERVER2_LOC, doc[MSolrConst.SOLR_URL_KEY] );
+  });
+};
+
+JSTester.run( new MSolrTest() );
 
 })(); // Namespace wrapper
 

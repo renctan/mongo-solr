@@ -52,8 +52,7 @@ MSolrDBTest.prototype.indexAllShouldIncludeAllCollectionTest = function () {
   var indexedColl;
   var indexResult;
 
-  this.solrDB.indexAll();
-  this.configDB.getLastError();
+  this.solrDB.indexAll( true );
 
   configDoc = this.configColl.findOne( this.serverConfigCriteria );
   indexedColl = configDoc[MSolrConst.DB_LIST_KEY][TEST_DB_1_NAME];
@@ -69,8 +68,7 @@ MSolrDBTest.prototype.indexShouldAddOneCollectionTest = function () {
   var indexResult;
   var newIndex = "qwerty";
 
-  this.solrDB.index( newIndex );
-  this.configDB.getLastError();
+  this.solrDB.index( newIndex, true );
 
   configDoc = this.configColl.findOne( this.serverConfigCriteria );
   indexedColl = configDoc[MSolrConst.DB_LIST_KEY][TEST_DB_1_NAME];
@@ -86,8 +84,7 @@ MSolrDBTest.prototype.removeIndexTest = function () {
   var indexedColl;
 
   this.solrDB.index( newIndex );
-  this.solrDB.remove( newIndex );
-  this.configDB.getLastError();
+  this.solrDB.remove( newIndex, true );
 
   configDoc = this.configColl.findOne( this.serverConfigCriteria );
   indexedColl = configDoc[MSolrConst.DB_LIST_KEY][TEST_DB_1_NAME];
