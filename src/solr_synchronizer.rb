@@ -1,5 +1,4 @@
 require "rubygems"
-require "rsolr"
 require "mongo"
 require "set"
 require "logger"
@@ -24,7 +23,6 @@ module MongoSolr
     # @param db_set [Hash<String, Set<String> >] ({}) The set of databases and their
     #   collections to index to Solr. The key should contain the database name in
     #   String and the value should be an array that contains the names of collections.
-    #   An empty hash means that everything will be indexed.
     # @option opt [String] :name ("") A string label that will be prefixed to all log outputs.
     #
     # Example:
@@ -214,7 +212,6 @@ module MongoSolr
 
     ############################################################################
     private
-    SPECIAL_PURPOSE_MONGO_DB_NAME_PATTERN = /^(local|admin|config)$/
     SPECIAL_COLLECTION_NAME_PATTERN = /^system\./
     MASTER_SLAVE_OPLOG_COLL_NAME = "oplog.$main"
     REPL_SET_OPLOG_COLL_NAME = "oplog.rs"
@@ -223,25 +220,15 @@ module MongoSolr
     OPLOG_AMBIGUOUS_MSG = "Cannot determine which oplog to use. Please specify " +
       "the appropriate mode."
 
-    # Dumps all contents of the MongoDB server (with the exception of special purpose
-    # databases like admin and config) to be indexed to Solr. If db_set was given during
-    # initialization, only the collection in the list will be dumped.
+    # Dumps the contents of the MongoDB server to be indexed to Solr.
     #
     # @param db_set [Hash<String, Array<String> >] a hash which contains the set of
     #   collections to index. The key contains the name of the database while the value
     #   contains an array of collection names.
     def dump_db_contents(db_set)
-      if db_set.empty? then
-        @db_connection.database_names.each do |db_name|
-          unless db_name =~ SPECIAL_PURPOSE_MONGO_DB_NAME_PATTERN then
-            dump_collections(@db_connection.db(db_name))
-          end
-        end
-      else
-        db_set.each do |db_name, collections|
-          db = @db_connection.db(db_name)
-          collections.each { |coll| dump_collection(db, coll) }
-        end
+      db_set.each do |db_name, collections|
+        db = @db_connection.db(db_name)
+        collections.each { |coll| dump_collection(db, coll) }
       end
 
       @solr.commit
@@ -349,14 +336,8 @@ module MongoSolr
 
       do_skip = true
 
-      if not db_set.empty? then
-        if db_set.has_key?(db_name) then
-          do_skip = !db_set[db_name].include?(collection_name)
-        end
-      elsif db_name =~ SPECIAL_PURPOSE_MONGO_DB_NAME_PATTERN then
-        # do_skip = true
-      else
-        do_skip = !(collection_name =~ SPECIAL_COLLECTION_NAME_PATTERN).nil?
+      if db_set.has_key?(db_name) then
+        do_skip = !db_set[db_name].include?(collection_name)
       end
 
       return do_skip

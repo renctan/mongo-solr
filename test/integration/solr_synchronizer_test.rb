@@ -18,6 +18,11 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       @connection = DB_CONNECTION
       @connection.stubs(:database_names).returns([TEST_DB, TEST_DB_2])
 
+      @basic_db_set = {
+        TEST_DB => Set.new(["test1", "test2"]),
+        TEST_DB_2 => Set.new(["test3"])
+      }
+
       @solr = mock()
     end
 
@@ -33,13 +38,13 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
       @solr.expects(:add).times(3)
       @solr.expects(:commit).once
-      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE)
+      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set)
       solr.logger = DEFAULT_LOGGER
       solr.sync { break }
     end
 
     should "update db insertions to solr after dumping" do
-      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE)
+      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set)
       solr.logger = DEFAULT_LOGGER
 
       @solr.expects(:add).at_most_once
@@ -55,7 +60,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
     end
 
     should "update multiple db insertions to solr after dumping" do
-      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE)
+      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set)
       solr.logger = DEFAULT_LOGGER
 
       @solr.expects(:add).twice
@@ -74,7 +79,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
     should "update db updates to solr after dumping" do
       @test_coll1.insert({ "msg" => "Hello world!" })
 
-      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE)
+      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set)
       solr.logger = DEFAULT_LOGGER
 
       @solr.expects(:add).twice
@@ -92,7 +97,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
     should "update deleted db contents to solr after dumping" do
       @test_coll1.insert({ "msg" => "Hello world!" })
 
-      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE)
+      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set)
       solr.logger = DEFAULT_LOGGER
 
       @solr.stubs(:add)
@@ -111,7 +116,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
     should "db inserts, updates and deletes to solr after dumping" do
       @test_coll1.insert({ "msg" => "Hello world!" })
 
-      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE)
+      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set)
       solr.logger = DEFAULT_LOGGER
 
       @solr.expects(:add).at_most(3)
@@ -130,7 +135,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
     end
 
     should "not update after stopped." do
-      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE)
+      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set)
       solr.logger = DEFAULT_LOGGER
 
       @solr.expects(:add).never
@@ -141,7 +146,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
     end
 
     should "sync after several cycles of start/stop." do
-      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE)
+      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set)
       solr.logger = DEFAULT_LOGGER
 
       @solr.expects(:add).never
@@ -162,7 +167,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
     end
 
     should "continue on running when an exception happened in solr/mongo and log it" do
-      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE)
+      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set)
       mock_logger = mock()
       mock_logger.stubs(:info)
       mock_logger.stubs(:debug)
@@ -183,7 +188,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
     end
 
     should "properly continue after recovering from error" do
-      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE)
+      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set)
       mock_logger = mock()
       mock_logger.stubs(:info)
       mock_logger.stubs(:debug)
@@ -302,7 +307,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
       context "dynamic collection set modification using the add_collection API" do
         should "update after being added in the list (single db)" do
-          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE)
+          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, {})
           solr.logger = DEFAULT_LOGGER
 
           @solr.expects(:add).once
