@@ -2,23 +2,45 @@ require_relative "../test_helper"
 require "#{PROJ_SRC_PATH}/config_format_reader"
 
 class ConfigFormatReaderTest < Test::Unit::TestCase
+  include MongoSolr
+
   SAMPLE_SOLR_LOC = "http://localhost::8983/solr"
-  SAMPLE_ENTRY = {
-    "url" => SAMPLE_SOLR_LOC,
-    "m" => "auto",
-    "dbs" => {
-      "courses" => { "undergrad" => [], "masters" => [], "doctoral" => [] },
-      "staff" => { "prof" => [], "admin" => [] }
-    }
-  }
+  SAMPLE_ENTRIES =
+  [
+   {
+     SolrConfigConst::SOLR_URL_KEY => SAMPLE_SOLR_LOC,
+     SolrConfigConst::NS_KEY => "courses.undergrad",
+     SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
+   },
+   {
+     SolrConfigConst::SOLR_URL_KEY => SAMPLE_SOLR_LOC,
+     SolrConfigConst::NS_KEY => "courses.masters",
+     SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
+   },
+   {
+     SolrConfigConst::SOLR_URL_KEY => SAMPLE_SOLR_LOC,
+     SolrConfigConst::NS_KEY => "courses.doctoral",
+     SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
+   },
+   {
+     SolrConfigConst::SOLR_URL_KEY => SAMPLE_SOLR_LOC,
+     SolrConfigConst::NS_KEY => "staff.prof",
+     SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
+   },
+   {
+     SolrConfigConst::SOLR_URL_KEY => SAMPLE_SOLR_LOC,
+     SolrConfigConst::NS_KEY => "staff.admin",
+     SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
+   }
+  ]
 
   context "basic test" do
     setup do
-      @reader = MongoSolr::ConfigFormatReader.new(SAMPLE_ENTRY)
+      @reader = MongoSolr::ConfigFormatReader.new(SAMPLE_ENTRIES)
     end
 
     should "extract solr location correctly" do
-      assert_equal(SAMPLE_SOLR_LOC, @reader.get_solr_loc)
+      assert_equal(SAMPLE_SOLR_LOC, @reader.solr_loc)
     end
 
     should "extract db_set correctly" do
