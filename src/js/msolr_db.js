@@ -10,22 +10,24 @@ var MSolrDb = function ( configColl, serverLocation, dbName ){
   this.configDB = configColl.getDB();
   this.serverLocation = serverLocation;
   this.dbName = dbName;
-  this.criteria = {};
-  this.criteria[MSolrConst.SOLR_URL_KEY] = serverLocation;
-  this.keyPrefix = MSolrConst.DB_LIST_KEY + "." + dbName + ".";
 };
 
 /**
  * Add all collections under this database for indexing.
  * 
- * @param {Boolean} wait Wait till the operation completes before returning. false by default.
+ * @param {Boolean} [wait = false] Wait till the operation completes before returning.
  */
 MSolrDb.prototype.indexAll = function ( wait ){
-  var coll_names = this.configColl.getMongo().getDB(this.dbName).getCollectionNames();
+  var collNames = this.configColl.getMongo().getDB(this.dbName).getCollectionNames();
   var doWait = wait || false;
+  var coll;
 
-  for (var x = coll_names.length; x--;) {
-    this.index( coll_names[x] );
+  for ( var x = collNames.length; x--; ) {
+    coll = collNames[x];
+
+    if ( !/^system\..*/.test( coll ) ) {
+      this.index( collNames[x], null );
+    }
   }
 
   if ( doWait ) {
@@ -38,24 +40,24 @@ MSolrDb.prototype.indexAll = function ( wait ){
  * 
  * @param {String} coll The name of the collection to index.
  * @param {String} [field = null] The name of the specific field to index. (Not yet supported)
- * @param {Boolean} wait Wait till the operation completes before returning. false by default.
- *  
- * Warning: Passing a null to the field will delete all previous field settings for that
- * collection.
+ * @param {Boolean} [wait = false] Wait till the operation completes before returning.
  */
 MSolrDb.prototype.index = function ( coll, field, wait ){
-  var elemKey = this.keyPrefix + coll;
-  var docField = {};
+  var ns = this.dbName + "." + coll;
   var doWait = wait || false;
+  var updateDoc = {};
+  var fieldDoc = {};
+  var criteria = {};
 
-  if ( field == null ) {
-    docField[elemKey] = [];
-    this.configColl.update( this.criteria, { $set: docField } );
+  criteria[MSolrConst.SOLR_URL_KEY] = this.serverLocation;
+  criteria[MSolrConst.NS_KEY] = ns;
+
+  if ( field != null ) {
+    fieldDoc[field] = MSolrDb.INDEX_COLL_FIELD_OPT;
+    updateDoc[MSolrConst.COLL_FIELD_KEY] = fieldDoc;
   }
-  else {
-    docField[elemKey] = field;
-    this.configColl.update( this.criteria, { $addToSet: docField } );
-  }
+
+  this.configColl.update( criteria, { $set: updateDoc }, true );
 
   if ( doWait ) {
     this.configDB.getLastError();
@@ -66,15 +68,17 @@ MSolrDb.prototype.index = function ( coll, field, wait ){
  * Removes a collection from being indexed.
  * 
  * @param {String} coll The name of the collection to remove.
- * @param {Boolean} wait Wait till the operation completes before returning. false by default.
+ * @param {Boolean} [wait = false] Wait till the operation completes before returning.
  */
 MSolrDb.prototype.remove = function ( coll, wait ){
-  var elemKey = this.keyPrefix + coll;
-  var docField = {};
+  var ns = this.dbName + "." + coll;
+  var criteria = {};
   var doWait = wait || false;
 
-  docField[elemKey] = 1;
-  this.configColl.update( this.criteria, { $unset: docField } );
+  criteria[MSolrConst.SOLR_URL_KEY] = this.serverLocation;
+  criteria[MSolrConst.NS_KEY] = ns;
+
+  this.configColl.remove( criteria );
 
   if ( doWait ) {
     this.configDB.getLastError();

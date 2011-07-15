@@ -30,7 +30,6 @@ var MSolrServerTest = function () {
 
 MSolrServerTest.prototype.setup = function () {
   this.configColl = this.configDB.getCollection( CONFIG_COLL_NAME );
-  this.configColl.insert( this.serverConfigCriteria );
   this.solr = new MSolrServer( this.configColl, SOLR_SERVER_LOC );
 };
 
@@ -40,24 +39,17 @@ MSolrServerTest.prototype.teardown = function () {
 
 MSolrServerTest.prototype.dbTest = function () {
   var configDoc;
-  var indexedDB;
-  var indexResult;
   var solrDB = this.solr.db( TEST_DB_1_NAME );
 
   // Needs to create a collection in order to have the database created.
-  solrDB.index( "dummy", true );
+  solrDB.index( "dummy", null, true );
 
   configDoc = this.configColl.findOne( this.serverConfigCriteria );
-  indexedDB = configDoc[MSolrConst.DB_LIST_KEY];
-
-  // TODO: Find a better way to check membership equality in js
-  assert.neq( undefined, indexedDB[TEST_DB_1_NAME] );
+  assert.eq( TEST_DB_1_NAME + ".dummy", configDoc[MSolrConst.NS_KEY] );
 };
 
 MSolrServerTest.prototype.removeDBwithOneDBExistingTest = function () {
   var configDoc;
-  var indexedDB;
-  var indexResult;
   var solrDB = this.solr.db( TEST_DB_1_NAME );
 
   // Needs to create a collection in order to have the database created.
@@ -65,16 +57,11 @@ MSolrServerTest.prototype.removeDBwithOneDBExistingTest = function () {
   this.solr.removeDB( TEST_DB_1_NAME, true );
 
   configDoc = this.configColl.findOne( this.serverConfigCriteria );
-  indexedDB = configDoc[MSolrConst.DB_LIST_KEY];
-
-  // TODO: Find a better way to check membership equality in js
-  assert.eq( undefined, indexedDB[TEST_DB_1_NAME] );
+  assert.eq( null, configDoc );
 };
 
 MSolrServerTest.prototype.removeDBwithTwoDBExistingTest = function () {
-  var configDoc;
-  var indexedDB;
-  var indexResult;
+  var cursor;
 
   // Needs to create a collection in order to have the database created.
   this.solr.db( TEST_DB_1_NAME ).index( "dummy" );
@@ -82,12 +69,11 @@ MSolrServerTest.prototype.removeDBwithTwoDBExistingTest = function () {
 
   this.solr.removeDB( TEST_DB_1_NAME, true );
 
-  configDoc = this.configColl.findOne( this.serverConfigCriteria );
-  indexedDB = configDoc[MSolrConst.DB_LIST_KEY];
-
-  // TODO: Find a better way to check membership equality in js
-  assert.eq( undefined, indexedDB[TEST_DB_1_NAME] );
-  assert.neq( undefined, indexedDB[TEST_DB_2_NAME] );
+  cursor = this.configColl.find( this.serverConfigCriteria );
+  cursor.forEach( function ( doc ) {
+    // Only expecting one result
+    assert.eq( TEST_DB_2_NAME + ".another_dummy", doc[MSolrConst.NS_KEY] );
+  });
 };
 
 JSTester.run( new MSolrServerTest() );

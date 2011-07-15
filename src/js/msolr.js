@@ -26,6 +26,8 @@ var MSolr = function ( configDBName, configCollName ){
   this.db = conn.getDB( dbName );
   this.coll = this.db.getCollection( collName );
   ensureIdxCriteria[MSolrConst.SOLR_URL_KEY] = 1;
+  ensureIdxCriteria[MSolrConst.NS_KEY] = 1;
+
   this.coll.ensureIndex( ensureIdxCriteria, { "unique": true } );
 };
 
@@ -61,27 +63,8 @@ MSolr.getConfigDBName = function ( mongo ) {
  * 
  * @return {Array} The list of server settings.
  */
-MSolr.prototype.listServers = function () {
+MSolr.prototype.showConfig = function () {
   return this.coll.find();
-};
-
-/**
- * Adds a new Solr server configuration.
- * 
- * @param {String} location The location of the server.
- * @param {Boolean} wait Wait till the operation completes before returning. false by default.
- */
-MSolr.prototype.addServer = function ( location, wait ) {
-  var criteria = {};
-  var doWait = wait || false;
-
-  criteria[MSolrConst.SOLR_URL_KEY] = location;
-  // Assumption: SOLR_URL_KEY values are unique -> currently enforced by the constructor.
-  this.coll.insert( criteria );
-
-  if ( doWait ) {
-    this.db.getLastError();
-  }
 };
 
 /**
@@ -89,7 +72,7 @@ MSolr.prototype.addServer = function ( location, wait ) {
  * 
  * @param {String} originalUrl The original url.
  * @param {String} newUrl The new url.
- * @param {Boolean} wait Wait till the operation completes before returning. false by default.
+ * @param {Boolean} [wait = false] Wait till the operation completes before returning.
  */
 MSolr.prototype.changeUrl = function ( originalUrl, newUrl, wait ) {
   var criteria = {};
@@ -106,10 +89,10 @@ MSolr.prototype.changeUrl = function ( originalUrl, newUrl, wait ) {
 };
 
 /**
- * Delete a indexing server configuration.
+ * Deletes the server configuration.
  * 
  * @param {String} location The location of the server.
- * @param {Boolean} wait Wait till the operation completes before returning. false by default.
+ * @param {Boolean} [wait = false] Wait till the operation completes before returning.
  */
 MSolr.prototype.removeServer = function ( location, wait ) {
   var criteria = {};
@@ -130,7 +113,7 @@ MSolr.prototype.removeServer = function ( location, wait ) {
  * 
  * @return {MSolrServer} the server object.
  */
-MSolr.prototype.getServer = function ( location ) {
+MSolr.prototype.server = function ( location ) {
   return new MSolrServer( this.coll, location );
 };
 

@@ -8,9 +8,6 @@ var MSolrServer = function ( configColl, loc ) {
   this.configColl = configColl;
   this.configDB = configColl.getDB();
   this.loc = loc;
-
-  this.criteria = {};
-  this.criteria[MSolrConst.SOLR_URL_KEY] = loc;
 };
 
 /**
@@ -26,14 +23,16 @@ MSolrServer.prototype.db = function ( dbName ) {
  * Removes a database from indexing.
  * 
  * @param {String} dbName The name of the database.
- * @param {Boolean} wait Wait till the operation completes before returning. false by default.
+ * @param {Boolean} [wait = false] Wait till the operation completes before returning.
  */
 MSolrServer.prototype.removeDB = function ( dbName, wait ) {
-  var docField = {};
+  var criteria = {};
   var doWait = wait || false;
+  var dbRegexPattern = new RegExp( "^" + dbName + "\\..+" );
 
-  docField[MSolrConst.DB_LIST_KEY + "." + dbName] = 1;
-  this.configColl.update( this.criteria, { $unset: docField } );
+  criteria[MSolrConst.SOLR_URL_KEY] = this.loc;
+  criteria[MSolrConst.NS_KEY] = dbRegexPattern;
+  this.configColl.remove( criteria );
 
   if ( doWait ) {
     this.configDB.getLastError();
