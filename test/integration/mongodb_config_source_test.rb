@@ -4,7 +4,7 @@ require "#{PROJ_SRC_PATH}/mongodb_config_source"
 class ConfigDBFixture
   include MongoSolr
 
-  SOLR_LOC_1 = "http://localhost::8983/solr"
+  SOLR_LOC_1 = "http://localhost:8983/solr"
   SOLR_LOC1_CONFIG =
   [
    {
@@ -19,7 +19,7 @@ class ConfigDBFixture
    }
   ]
 
-  SOLR_LOC_2 = "http://somewhere.out.there::4321/solr"
+  SOLR_LOC_2 = "http://somewhere.out.there:4321/solr"
   SOLR_LOC2_CONFIG =
   [
    {
