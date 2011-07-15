@@ -15,11 +15,12 @@ module MongoSolr
       if block_given? then
         cursor = @coll.find({}, { :sort => [ SolrConfigConst::SOLR_URL_KEY, :asc ] })
         config_data = []
+        current_server = ""
 
         doc = cursor.next_document
-        current_server = doc[SolrConfigConst::SOLR_URL_KEY]
 
         unless doc.nil? then
+          current_server = doc[SolrConfigConst::SOLR_URL_KEY]
           config_data << doc
         end
 
