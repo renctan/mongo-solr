@@ -1,4 +1,9 @@
+require "rubygems"
+require "rsolr"
+require "forwardable"
+
 require_relative "solr_synchronizer"
+require_relative "config_format_reader"
 
 module MongoSolr
   # A simple wrapper that abstracts the sync thread and the SolrSynchronizer object.
@@ -7,7 +12,7 @@ module MongoSolr
   class SolrSyncThread
     extend Forwardable
 
-    def_delegators :@solr, update_db_set
+    def_delegators :@solr, :update_db_set
 
     # @param solr [SolrSynchronizer]
     def initialize(solr)
@@ -38,9 +43,11 @@ module MongoSolr
     # @param mongo [Mongo::Connection] A connection to the MongoDB instance.
     # @param config [MongoSolr::ConfigSource] The object that contains the configuration
     #   information for all the different Solr Servers.
-    def initialize(mongo, config)
+    # @param mode [Symbol] @see SolrSynchronizer#new
+    def initialize(mongo, config, mode)
       @mongo = mongo
       @config = config
+      @mode = mode
       @solr_sync_set = {}
     end
 
@@ -54,22 +61,23 @@ module MongoSolr
       config_poll_interval = opt[:config_poll_interval] || 1
 
       loop do
-        latest_config = @config.get
         new_solr_sync_set = {}
 
-        latest_config.each do |solr_config|
-          url = solr_config.get_solr_loc
+        @config.each do |config_data|
+          solr_config = ConfigFormatReader.new(config_data)
+
+          url = solr_config.solr_loc
           new_db_set = solr_config.get_db_set
 
-          if @solr_sync_list.has_key? url then
-            solr_sync = @solr_sync_list[url]
+          if @solr_sync_set.has_key? url then
+            solr_sync = @solr_sync_set[url]
             solr_sync.update_db_set(new_db_set)
-            @solr_sync_list.delete url
+            @solr_sync_set.delete url
           else
-            solr = RSolr.new(:url => url)
-            mode = solr_config.get_mongo_mode
+            puts "url => #{url}"
+            solr = RSolr.connect(:url => url)
             solr_sync =
-              SolrSyncThread.new(SolrSynchronizer.new(solr, @mongo, mode,
+              SolrSyncThread.new(SolrSynchronizer.new(solr, @mongo, @mode,
                                                       new_db_set, sync_opt))
             solr_sync.start
           end
@@ -78,11 +86,11 @@ module MongoSolr
         end
 
         # Terminate all currently running threads who are not in the new config
-        @solr_sync_list.each do |url, solr_thread|
+        @solr_sync_set.each do |url, solr_thread|
           solr_thread.stop
         end
 
-        @solr_sync_list = new_solr_sync_set
+        @solr_sync_set = new_solr_sync_set
         sleep config_poll_interval # Check the config settings again after a second
       end
     end
