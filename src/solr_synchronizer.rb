@@ -6,6 +6,7 @@ require "logger"
 require_relative "document_transform"
 require_relative "exception"
 require_relative "synchronized_hash"
+require_relative "solr_retry_decorator"
 
 module MongoSolr
   # A simple class utility for indexing an entire MongoDB database contents (excluding
@@ -26,17 +27,24 @@ module MongoSolr
     # @option opt [Logger] :logger The object to use for logging. The default logger outputs
     #   to stdout.
     # @option opt [String] :name ("") A string label that will be prefixed to all log outputs.
+    # @option opt [number] :interval (1) The interval in seconds to wait before checking for
+    #    new updates in the database
+    # @option opt [number] :err_retry_interval (1) The interval in seconds to retry again
+    #    after encountering an error in the Solr server or MongoDB instance.
     #
     # Example:
     #  mongo = Mongo::Connection.new("localhost", 27017)
     #  solr_client = RSolr.connect(:url => "http://localhost:8983/solr")
     #  solr = MongoSolr::SolrSynchronizer.new(solr_client, mongo, :master_slave)
     def initialize(solr, mongo_connection, mode, db_set = {}, opt = {})
-      @solr = solr
       @db_connection = mongo_connection
       @mode = mode
       @logger = opt[:logger] || Logger.new(STDOUT)
       @name = opt[:name] || ""
+      @update_interval = opt[:interval] || 1
+      @err_retry_interval = opt[:err_retry_interval] || 1
+
+      @solr = SolrRetryDecorator.new(solr, @err_retry_interval, @logger)
 
       # The set of collections to listen to for updates in the oplogs.
       @db_set = MongoSolr::SynchronizedHash.new(db_set)
@@ -113,19 +121,12 @@ module MongoSolr
     # blocking call that contains an infinite loop. This method assumes that the databases
     # are already authenticated.
     #
-    # @option opt [number] :interval (1) The interval in seconds to wait before checking for
-    #    new updates in the database
-    # @option opt [number] :err_retry_interval (1) The interval in seconds to retry again
-    #    after encountering an error in the Solr server or MongoDB instance.
-    #
     # @param block [Proc(mode, doc_count)] An optional  procedure that will be called during
     #   certain conditions:
     #
     #   1. block(:finished_dumping, 0) will be called after dumping the contents of the database.
     #   2. block(:sync, doc_count) will be called everytime Solr is updated from the oplog.
     #      doc_count contains the number of docs synched with Solr so far.
-    #   3. block(:excep, doc_count) will be called everytime an exception occured while trying
-    #      to update Solr.
     #
     # @raise [OplogException]
     #
@@ -157,8 +158,6 @@ module MongoSolr
       dump_db_contents(db_set_snapshot)
       yield :finished_dumping, 0 if block_given?
 
-      update_interval = opt[:interval] || 1
-      err_retry_interval = opt[:err_retry_interval] || 1
       doc_count = 0
 
       loop do
@@ -179,18 +178,10 @@ module MongoSolr
           return if stop_synching?
         end
 
-        begin
-          update_solr(doc_batch)
-        rescue => e
-          @logger.error "#{@name}: #{e.message}"
-          sleep err_retry_interval
-          yield :excep, doc_count if block_given?
-          retry
-        end
-
+        update_solr(doc_batch)
         yield :sync, doc_count if block_given?
 
-        sleep update_interval
+        sleep @update_interval unless @update_interval.zero?
       end
     end
 

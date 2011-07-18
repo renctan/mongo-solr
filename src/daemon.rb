@@ -46,7 +46,7 @@ module MongoSolr
     #   information for all the different Solr Servers.
     # @param mode [Symbol] @see SolrSynchronizer#new
     # @option opt [Logger] :logger The object to use for logging. The default logger outputs
-    #   to stdout.
+    #   to STDOUT.
     def initialize(mongo, config, mode, opt = {})
       @mongo = mongo
       @config = config
