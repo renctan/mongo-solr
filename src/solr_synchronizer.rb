@@ -24,10 +24,14 @@ module MongoSolr
     # @option opt [Logger] :logger The object to use for logging. The default logger outputs
     #   to stdout.
     # @option opt [String] :name ("") A string label that will be prefixed to all log outputs.
-    # @option opt [number] :interval (1) The interval in seconds to wait before checking for
+    # @option opt [number] :interval (0) The interval in seconds to wait before checking for
     #    new updates in the database
     # @option opt [number] :err_retry_interval (1) The interval in seconds to retry again
     #    after encountering an error in the Solr server or MongoDB instance.
+    #
+    # Note: This object assumes that the solr and mongo_connection params are valid. As a
+    #   a consequence, it will keep on retrying whenever an exception on these objects
+    #   occured.
     #
     # Example:
     #  mongo = Mongo::Connection.new("localhost", 27017)
@@ -38,7 +42,7 @@ module MongoSolr
       @mode = mode
       @logger = opt[:logger] || Logger.new(STDOUT)
       @name = opt[:name] || ""
-      @update_interval = opt[:interval] || 1
+      @update_interval = opt[:interval] || 0
       @err_retry_interval = opt[:err_retry_interval] || 1
 
       @solr = SolrRetryDecorator.new(solr, @err_retry_interval, @logger)
@@ -131,7 +135,7 @@ module MongoSolr
     # auth = { "users" => { :user => "root", :pwd => "root" },
     #          "admin" => { :user => "admin", :pwd => "" } }
     # solr.sync({ :db_pass => auth, :interval => 1 })
-    def sync(opt = {}, &block)
+    def sync(&block)
       # Lock usage:
       # 1. @stop_mutex->@synching_mutex
       # 2. get_db_set_snapshot()
@@ -237,8 +241,10 @@ module MongoSolr
     def dump_collection(db, collection_name)
       @logger.info "#{@name}: dumping #{db.name}.#{collection_name}..."
 
-      db.collection(collection_name).find().each do |doc|
-        @solr.add(DocumentTransform.translate_doc(doc))
+      retry_until_ok do
+        db.collection(collection_name).find().each do |doc|
+          @solr.add(DocumentTransform.translate_doc(doc))
+        end
       end
     end
 
@@ -291,12 +297,18 @@ module MongoSolr
         database = ns_split.first
         collection = ns_split[1]
 
-        to_update = @db_connection.db(database).collection(collection).
-          find({"_id" => {"$in" => id_list.to_a}})
+        retry_until_ok do
+          to_update = @db_connection.db(database).collection(collection).
+            find({"_id" => {"$in" => id_list.to_a}})
 
-        to_update.each do |doc|
-          @logger.info "#{@name}: updating #{doc.inspect}"
-          @solr.add(DocumentTransform.translate_doc(doc))
+          to_update.each do |doc|
+            @logger.info "#{@name}: updating #{doc.inspect}"
+            @solr.add(DocumentTransform.translate_doc(doc))
+
+            # Remove from the set so there will be less documents to update
+            # when an exception occurs and this block is executed again
+            id_list.delete doc["_id"]
+          end
         end
       end
 
@@ -500,8 +512,11 @@ module MongoSolr
     #
     # @return [BSON::Timestamp] the timestamp object.
     def get_last_oplog_timestamp
-      cur = get_oplog_collection(@mode).find({}, :sort => ["$natural", :desc],
-                                             :limit => 1)
+      cur = retry_until_ok do
+        get_oplog_collection(@mode).find({}, :sort => ["$natural", :desc],
+                                         :limit => 1)
+      end
+
       cur.next["ts"]
     end
 
@@ -516,6 +531,22 @@ module MongoSolr
                           :selector => {"op" => {"$ne" => "n"},
                             "ts" => {"$gt" => timestamp } }
                         })
+    end
+
+    # Convenience method for reattempting an operation until the execution is free of
+    # exception.
+    #
+    # @param block [Proc] The procedure to perform. The procedure should be indepotent.
+    #
+    # @return [Object] the return value of the block.
+    def retry_until_ok(&block)
+      begin
+        yield block
+      rescue => e
+        @logger.error e.message
+        sleep @err_retry_interval
+        retry
+      end
     end
   end
 end

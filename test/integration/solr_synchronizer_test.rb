@@ -94,6 +94,28 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       end
     end
 
+    should "batch multiple db updates to solr after dumping" do
+      @test_coll1.insert({ "msg" => "Hello world!" })
+      @test_coll1.insert({ "foo" => "bar?" })
+
+      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set,
+                                             { :logger => DEFAULT_LOGGER })
+
+      @solr.stubs(:add)
+      @solr.stubs(:commit)
+
+      solr.sync do |mode, doc_count|
+        if mode == :finished_dumping then
+          @test_coll1.update({ "msg" => "Hello world!" }, {"$set" => {"from" => "Tim Berners"}})
+          @test_coll1.update({ "foo" => "bar?" }, {"$set" => {"rab" => "oof"}})
+          @solr.expects(:add).twice
+          @solr.expects(:commit).once
+        elsif mode == :sync then
+          break
+        end
+      end
+    end
+
     should "update deleted db contents to solr after dumping" do
       @test_coll1.insert({ "msg" => "Hello world!" })
 

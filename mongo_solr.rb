@@ -20,15 +20,11 @@ if $0 == __FILE__ then
   config_reader = MongoSolr::MongoDBConfigSource.new(mongo.db(config_db_name).
                                                      collection(CONFIG_COLL_NAME))
 
-  daemon = MongoSolr::Daemon.new(mongo, config_reader, options.mode)
-
-  sync_opt = { :interval => options.interval }
-
   daemon_opt = {
     :config_poll_interval => options.config_interval,
-    :sync_opt => sync_opt 
+    :interval => options.interval
   }
 
-  daemon.run(daemon_opt)
+  MongoSolr::Daemon.run(mongo, config_reader, options.mode, daemon_opt)
 end
 
