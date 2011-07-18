@@ -6,8 +6,10 @@ module MongoSolr
   # A simple class that represents the source of config data coming from a MongoDB instance
   class MongoDBConfigSource < MongoSolr::ConfigSource
     # @param coll [Mongo::Collection] The collection that contains the config data.
-    def initialize(coll)
+    # @param logger [Logger] (nil) The object to use for logging.
+    def initialize(coll, logger = nil)
       @coll = coll
+      @logger = logger
     end
 
     # @inheritDoc
@@ -17,29 +19,39 @@ module MongoSolr
         config_data = []
         current_server = ""
 
-        doc = cursor.next_document
-
-        unless doc.nil? then
-          current_server = doc[SolrConfigConst::SOLR_URL_KEY]
-          config_data << doc
+        begin
+          doc = cursor.next_document
+        rescue => e
+          @logger.error e.message unless @logger.nil?
+          return self
         end
 
-        while doc = cursor.next_document do
-          new_server = doc[SolrConfigConst::SOLR_URL_KEY]
+        stop = false
+        while not stop do
+          unless doc.nil? then
+            new_server = doc[SolrConfigConst::SOLR_URL_KEY]
 
-          if new_server != current_server then
-            yield config_data
+            if new_server != current_server then
+              yield config_data unless config_data.empty?
 
-            config_data.clear
-            current_server = new_server
+              config_data.clear
+              current_server = new_server
+            end
+
+            config_data << doc
+
+            begin
+              doc = cursor.next_document
+            rescue => e
+              @logger.error e.message unless @logger.nil?
+              return self
+            end
+          else
+            stop = true
           end
-
-          config_data << doc
         end
 
-        unless config_data.empty? then
-          yield config_data
-        end
+        yield config_data unless config_data.empty?
       end
 
       return self

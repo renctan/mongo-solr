@@ -16,13 +16,17 @@ if $0 == __FILE__ then
   mongo = Mongo::Connection.new(options.mongo_loc, options.mongo_port)
   MongoSolr::Util.authenticate_to_db(mongo, options.auth)
 
+  logger = Logger.new(STDOUT)
+
   config_db_name = MongoSolr::MongoDBConfigSource.get_config_db_name(mongo)
   config_reader = MongoSolr::MongoDBConfigSource.new(mongo.db(config_db_name).
-                                                     collection(CONFIG_COLL_NAME))
+                                                     collection(CONFIG_COLL_NAME),
+                                                     logger)
 
   daemon_opt = {
     :config_poll_interval => options.config_interval,
-    :interval => options.interval
+    :interval => options.interval,
+    :logger => logger
   }
 
   MongoSolr::Daemon.run(mongo, config_reader, options.mode, daemon_opt)
