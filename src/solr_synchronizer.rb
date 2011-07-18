@@ -153,36 +153,53 @@ module MongoSolr
         end
       end
 
-      cursor = get_oplog_cursor(get_last_oplog_timestamp)
+      last_timestamp = get_last_oplog_timestamp
+      cursor = get_oplog_cursor(last_timestamp)
 
       db_set_snapshot = get_db_set_snapshot
       dump_db_contents(db_set_snapshot)
       yield :finished_dumping, 0 if block_given?
 
-      doc_count = 0
-
       loop do
         return if stop_synching?
         doc_batch = []
         db_set_snapshot = get_db_set_snapshot
+        doc_count = 0 # count for the current batch
+        cursor_exception_occured = false
 
-        while doc = cursor.next_document do
-          if insert_to_backlog(doc) then
-            # Do nothing
-          elsif filter_entry?(db_set_snapshot, doc["ns"]) then
-            @logger.debug "#{@name}: skipped oplog: #{doc}"
+        loop do
+          begin
+            doc = cursor.next_document
+          rescue => e
+            @logger.error "#{@name}: #{e.message}"
+            cursor_exception_occured = true
+            break
+          end
+
+          if doc.nil? then
+            break
           else
-            doc_batch << doc
-            doc_count += 1
+            if insert_to_backlog(doc) then
+              # Do nothing
+            elsif filter_entry?(db_set_snapshot, doc["ns"]) then
+              @logger.debug "#{@name}: skipped oplog: #{doc}"
+            else
+              doc_batch << doc
+              doc_count += 1
+            end
+
+            last_timestamp = doc["ts"]
           end
 
           return if stop_synching?
+          break if doc_count > OPLOG_BATCH_SIZE
         end
 
         update_solr(doc_batch)
         yield :sync, doc_count if block_given?
 
         sleep @update_interval unless @update_interval.zero?
+        cursor = get_oplog_cursor(last_timestamp) if cursor_exception_occured
       end
     end
 
@@ -207,6 +224,7 @@ module MongoSolr
       "you are connected to a server running on master/slave or replica set configuration."
     OPLOG_AMBIGUOUS_MSG = "Cannot determine which oplog to use. Please specify " +
       "the appropriate mode."
+    OPLOG_BATCH_SIZE = 200
 
     # Dumps the contents of the MongoDB server to be indexed to Solr.
     #
@@ -543,7 +561,7 @@ module MongoSolr
       begin
         yield block
       rescue => e
-        @logger.error e.message
+        @logger.error "#{@name}: #{e.message}"
         sleep @err_retry_interval
         retry
       end
