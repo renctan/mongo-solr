@@ -38,14 +38,14 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
       @solr.expects(:add).times(3)
       @solr.expects(:commit).once
-      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set)
-      solr.logger = DEFAULT_LOGGER
+      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set,
+                                             { :logger => DEFAULT_LOGGER })
       solr.sync { break }
     end
 
     should "update db insertions to solr after dumping" do
-      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set)
-      solr.logger = DEFAULT_LOGGER
+      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set,
+                                             { :logger => DEFAULT_LOGGER })
 
       @solr.expects(:add).at_most_once
       @solr.expects(:commit).twice # during and after dump
@@ -60,8 +60,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
     end
 
     should "update multiple db insertions to solr after dumping" do
-      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set)
-      solr.logger = DEFAULT_LOGGER
+      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set,
+                                             { :logger => DEFAULT_LOGGER })
 
       @solr.expects(:add).twice
       @solr.expects(:commit).times(2..3) # during and after dump
@@ -79,8 +79,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
     should "update db updates to solr after dumping" do
       @test_coll1.insert({ "msg" => "Hello world!" })
 
-      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set)
-      solr.logger = DEFAULT_LOGGER
+      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set,
+                                             { :logger => DEFAULT_LOGGER })
 
       @solr.expects(:add).twice
       @solr.expects(:commit).twice # during and after dump
@@ -97,8 +97,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
     should "update deleted db contents to solr after dumping" do
       @test_coll1.insert({ "msg" => "Hello world!" })
 
-      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set)
-      solr.logger = DEFAULT_LOGGER
+      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set,
+                                             { :logger => DEFAULT_LOGGER })
 
       @solr.stubs(:add)
       @solr.expects(:delete_by_id).once
@@ -116,8 +116,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
     should "db inserts, updates and deletes to solr after dumping" do
       @test_coll1.insert({ "msg" => "Hello world!" })
 
-      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set)
-      solr.logger = DEFAULT_LOGGER
+      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set,
+                                             { :logger => DEFAULT_LOGGER })
 
       @solr.expects(:add).at_most(3)
       @solr.expects(:delete_by_id).once
@@ -135,8 +135,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
     end
 
     should "not update after stopped." do
-      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set)
-      solr.logger = DEFAULT_LOGGER
+      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set,
+                                             { :logger => DEFAULT_LOGGER })
 
       @solr.expects(:add).never
       @solr.stubs(:commit)
@@ -146,8 +146,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
     end
 
     should "sync after several cycles of start/stop." do
-      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set)
-      solr.logger = DEFAULT_LOGGER
+      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set,
+                                             { :logger => DEFAULT_LOGGER })
 
       @solr.expects(:add).never
       @solr.stubs(:commit)
@@ -177,8 +177,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
       context "pre-defined collection set" do
         should "update on collection in the list (single db)" do
-          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1)
-          solr.logger = DEFAULT_LOGGER
+          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1,
+                                                 { :logger => DEFAULT_LOGGER })
 
           @solr.expects(:add).once
           @solr.expects(:commit).twice
@@ -194,8 +194,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
         should "update on collection in the list (2 db)" do
           @db_set_coll1[@db2.name] = Set.new([@test_coll3.name])
-          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1)
-          solr.logger = DEFAULT_LOGGER
+          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1,
+                                                 { :logger => DEFAULT_LOGGER })
 
           @solr.expects(:add).twice
           @solr.expects(:commit).times(2..3)
@@ -213,8 +213,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         should "update on collection in the list (same db, diff coll)" do
           @db_set_coll1[@db.name].add(@test_coll2.name)
 
-          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1)
-          solr.logger = DEFAULT_LOGGER
+          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1,
+                                                 { :logger => DEFAULT_LOGGER })
 
           @solr.expects(:add).twice
           @solr.expects(:commit).times(2..3)
@@ -230,8 +230,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         end
 
         should "not update on collection not in the list (different db)" do
-          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1)
-          solr.logger = DEFAULT_LOGGER
+          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1,
+                                                 { :logger => DEFAULT_LOGGER })
 
           @solr.expects(:add).never
           @solr.stubs(:commit)
@@ -246,8 +246,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         end
 
         should "not update on collection not in the list (same db, diff coll)" do
-          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1)
-          solr.logger = DEFAULT_LOGGER
+          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1,
+                                                 { :logger => DEFAULT_LOGGER })
 
           @solr.expects(:add).never
           @solr.stubs(:commit)
@@ -264,8 +264,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
       context "dynamic collection set modification using the add_collection API" do
         should "update after being added in the list (single db)" do
-          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, {})
-          solr.logger = DEFAULT_LOGGER
+          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, {},
+                                                 { :logger => DEFAULT_LOGGER })
 
           @solr.expects(:add).once
           @solr.stubs(:commit)
@@ -281,8 +281,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         end
 
         should "not update after if not in the set calling add_collection (single db)" do
-          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, {})
-          solr.logger = DEFAULT_LOGGER
+          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, {},
+                                                 { :logger => DEFAULT_LOGGER })
 
           @solr.expects(:add).never
           @solr.stubs(:commit)
@@ -300,8 +300,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
       context "dynamic collection set modification using the update_db_set API" do
         should "should update on new entry added in the set (same db)" do
-          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1)
-          solr.logger = DEFAULT_LOGGER
+          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1,
+                                                 { :logger => DEFAULT_LOGGER })
 
           @solr.expects(:add).once
           @solr.stubs(:commit)
@@ -318,8 +318,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         end
 
         should "should update on new entry added in the set (different db)" do
-          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1)
-          solr.logger = DEFAULT_LOGGER
+          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1,
+                                                 { :logger => DEFAULT_LOGGER })
 
           @solr.expects(:add).once
           @solr.stubs(:commit)
@@ -337,8 +337,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
         should "should not update on entry removed from the set" do
           @db_set_coll1[@db.name] << @test_coll2.name
-          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1)
-          solr.logger = DEFAULT_LOGGER
+          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1,
+                                                 { :logger => DEFAULT_LOGGER })
 
           @solr.expects(:add).never
           @solr.stubs(:commit)
@@ -357,8 +357,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
       context "backlog update testing" do
         should "update perform all inserts in the backlog" do
-          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1)
-          solr.logger = DEFAULT_LOGGER
+          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1,
+                                                 { :logger => DEFAULT_LOGGER })
 
           @solr.stubs(:commit)
 

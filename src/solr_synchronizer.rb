@@ -12,9 +12,6 @@ module MongoSolr
   # A simple class utility for indexing an entire MongoDB database contents (excluding
   # administrative collections) to Solr.
   class SolrSynchronizer
-    # [Logger] Set the logger to be used to output. Defaults to STDOUT.
-    attr_writer :logger
-
     # Creates a synchronizer instance.
     #
     # @param solr [RSolr::Client] The client to the Solr server to populate database documents.
