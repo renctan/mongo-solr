@@ -23,6 +23,8 @@ module MongoSolr
     # @param db_set [Hash<String, Set<String> >] ({}) The set of databases and their
     #   collections to index to Solr. The key should contain the database name in
     #   String and the value should be an array that contains the names of collections.
+    # @option opt [Logger] :logger The object to use for logging. The default logger outputs
+    #   to stdout.
     # @option opt [String] :name ("") A string label that will be prefixed to all log outputs.
     #
     # Example:
@@ -33,7 +35,7 @@ module MongoSolr
       @solr = solr
       @db_connection = mongo_connection
       @mode = mode
-      @logger = Logger.new(STDOUT)
+      @logger = opt[:logger] || Logger.new(STDOUT)
       @name = opt[:name] || ""
 
       # The set of collections to listen to for updates in the oplogs.
@@ -149,13 +151,7 @@ module MongoSolr
         end
       end
 
-      cursor = Mongo::Cursor.new(get_oplog_collection(@mode),
-                                 { :tailable => true, :selector => {"op" => {"$ne" => "n"} } })
-
-      # Go to the tail of cursor. Must find a better way moving the cursor to the latest entry.
-      while cursor.next_document do
-        # Do nothing
-      end
+      cursor = get_oplog_cursor(get_last_oplog_timestamp)
 
       db_set_snapshot = get_db_set_snapshot
       dump_db_contents(db_set_snapshot)
@@ -510,6 +506,28 @@ module MongoSolr
 
       @logger.info "#{@name}: Stopping sync..." if do_stop
       return do_stop
+    end
+
+    # Gets the timestamp of the latest entry in the oplog
+    #
+    # @return [BSON::Timestamp] the timestamp object.
+    def get_last_oplog_timestamp
+      cur = get_oplog_collection(@mode).find({}, :sort => ["$natural", :desc],
+                                             :limit => 1)
+      cur.next["ts"]
+    end
+
+    # Acquire a tailable cursor on the oplog with time greater than the given timestamp.
+    #
+    # @param timestamp [BSON::Timestamp] The timestamp object.
+    #
+    # @return [Mongo::Cursor] the tailable cursor
+    def get_oplog_cursor(timestamp)
+      Mongo::Cursor.new(get_oplog_collection(@mode),
+                        { :tailable => true,
+                          :selector => {"op" => {"$ne" => "n"},
+                            "ts" => {"$gt" => timestamp } }
+                        })
     end
   end
 end

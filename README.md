@@ -27,4 +27,5 @@ The integration test uses the following assumptions:
 3. There is no admin user registered on the database.
 4. The test sets the output of the logger to "/dev/null" so the system running it should be able
    to understand it.
+5. There is no other process accessing the database server.
 
