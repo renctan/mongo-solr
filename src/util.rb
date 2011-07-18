@@ -1,4 +1,4 @@
-require "mongo"
+require "open-uri"
 
 module MongoSolr
   class Util
@@ -22,6 +22,28 @@ module MongoSolr
           db_connection.db(db_name).authenticate(auth[:user], auth[:pwd], true)
         end
       end
+    end
+
+    # Checks if url can respond to a http/https request.
+    #
+    # @param url [String] The url to test
+    # @param logger [Logger]
+    #
+    # @return [Boolean] true if url can be reached.
+    def self.url_ok?(url, logger)
+      ret = true
+
+      begin
+        response = open(url)
+      rescue => e
+        unless logger.nil? then
+          logger.warn "Error encountered while trying to contact #{url}: #{e.message}"
+        end
+
+        ret = false
+      end
+
+      return ret
     end
   end
 end
