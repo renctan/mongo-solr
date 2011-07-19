@@ -117,3 +117,32 @@ MSolr.prototype.server = function ( location ) {
   return new MSolrServer( this.coll, location );
 };
 
+/**
+ * Sets the indexing configuration.
+ * 
+ * @param {String} server The location of the Solr server to index to.
+ * @param {String} db The name of the database to index.
+ * @param {String} [coll = null] The name of the collection to index. All collections under
+ *   db will be indexed if this is not specified.
+ * @param {String} [field = null] The name of the field to index (not yet supported)
+ */
+MSolr.prototype.index = function ( server, db, coll, field ) {
+  if ( coll == null ) {
+    this.server( server ).db( db ).indexAll();
+  }
+  else {
+    this.server( server ).db( db ).index( coll, field );
+  }
+};
+
+MSolr.prototype.toString = function ( ) {
+  return "config_collection: " + this.coll._fullName;
+};
+
+/**
+ * Used for echo in the shell.
+ */
+MSolr.prototype.tojson = function ( ) {
+  return this.toString();
+};
+

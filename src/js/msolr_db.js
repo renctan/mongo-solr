@@ -85,3 +85,14 @@ MSolrDb.prototype.remove = function ( coll, wait ){
   }
 };
 
+MSolrDb.prototype.toString = function ( ) {
+  return this.dbName + " -> " + this.serverLocation;
+};
+
+/**
+ * Used for echo in the shell.
+ */
+MSolrDb.prototype.tojson = function ( ) {
+  return this.toString();
+};
+

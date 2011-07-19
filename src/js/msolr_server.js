@@ -39,3 +39,14 @@ MSolrServer.prototype.removeDB = function ( dbName, wait ) {
   }
 };
 
+MSolrServer.prototype.toString = function ( ) {
+  return this.loc;
+};
+
+/**
+ * Used for echo in the shell.
+ */
+MSolrServer.prototype.tojson = function ( ) {
+  return this.toString();
+};
+
