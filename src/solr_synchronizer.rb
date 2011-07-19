@@ -128,6 +128,8 @@ module MongoSolr
     #   1. block(:finished_dumping, 0) will be called after dumping the contents of the database.
     #   2. block(:sync, doc_count) will be called everytime Solr is updated from the oplog.
     #      doc_count contains the number of docs synched with Solr so far.
+    #   3. block(:excep, doc_count) will be called everytime an exception occured while trying
+    #      to update Solr.
     #
     # @raise [OplogException]
     #
@@ -173,6 +175,7 @@ module MongoSolr
           rescue => e
             @logger.error "#{@name}: #{e.message}"
             cursor_exception_occured = true
+            yield :excep, doc_count if block_given?
             break
           end
 
@@ -428,8 +431,6 @@ module MongoSolr
       # 1. @oplog_backlog
       # 2. Spawns a thread that uses @oplog_backlog
 
-      db_set_was_empty_before = db_set.empty?
-
       if db_set.has_key? db_name then
         current_collection = db_set[db_name]
       else
@@ -446,8 +447,8 @@ module MongoSolr
       diff = new_collection - current_collection
       current_collection.merge(diff)
 
-      if is_synching and not db_set_was_empty_before then
-        db = @db_connection.db(db_name)
+      if is_synching then
+        db = retry_until_ok { @db_connection.db(db_name) }
 
         diff.each do |coll|
           oplog_ns = "#{db_name}.#{coll}"
@@ -455,6 +456,7 @@ module MongoSolr
 
           backlog_sync_thread = Thread.start do
             dump_collection(db, coll)
+            @solr.commit
 
             # For testing/debugging only
             if block_given? then

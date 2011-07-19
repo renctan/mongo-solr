@@ -7,7 +7,7 @@ end
 
 namespace "test" do
   desc "Run all tests"
-  task :all => [:js, :unit, :integration]
+  task :all => [:js, :unit, :integration, :slow]
 
   desc "Run tests for the js Mongo Shell plugin"
   task :js do
@@ -18,13 +18,21 @@ namespace "test" do
     Dir.chdir orig_dir
   end
 
+  desc "Run unit tests"
   Rake::TestTask.new(:unit) do |t|
     t.test_files = FileList["test/unit/*_test.rb"]
     t.verbose = true
   end
 
+  desc "Run integration tests"
   Rake::TestTask.new(:integration) do |t|
     t.test_files = FileList["test/integration/*_test.rb"]
+    t.verbose = true
+  end
+
+  desc "Run very slow tests"
+  Rake::TestTask.new(:slow) do |t|
+    t.test_files = FileList["test/slow_tests/*_test.rb"]
     t.verbose = true
   end
 end
