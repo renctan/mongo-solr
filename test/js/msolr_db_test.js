@@ -102,7 +102,12 @@ var MSolrDBTest = function () {
 };
 
 MSolrDBTest.prototype.setup = function () {
+  var insertDoc = {};
+
   this.configColl = this.configDB.getCollection( CONFIG_COLL_NAME );
+  insertDoc[MSolrConst.SOLR_URL_KEY] = SOLR_SERVER_LOC;
+
+  this.configColl.insert( insertDoc );
   this.solrDB = new MSolrDb( this.configColl, SOLR_SERVER_LOC, TEST_DB_1.name );
 };
 
@@ -111,35 +116,40 @@ MSolrDBTest.prototype.teardown = function () {
 };
 
 MSolrDBTest.prototype.indexAllShouldIncludeAllCollectionTest = function () {
-  var configCur;
+  var configDoc;
+  var indexedColl;
   var resultCount = 0;
   var testColl = TEST_DB_1.coll;
+  var collName;
 
   this.solrDB.indexAll( true );
 
-  configCur = this.configColl.find( this.serverConfigCriteria );
-  configCur.forEach( function ( doc ) {
-    var collName = extractCollName( doc[MSolrConst.NS_KEY] );
-    resultCount += 1;
-    assert.neq( -1, arrayFind( testColl, collName ) );
-  });
+  configDoc = this.configColl.findOne( this.serverConfigCriteria );
+  indexedColl = configDoc[MSolrConst.LIST_KEY];
+  resultCount = indexedColl.length;
 
   assert.eq( testColl.length, resultCount );
+
+  for ( var i = resultCount; i--; ) {
+    collName = extractCollName( indexedColl[i][MSolrConst.NS_KEY] );
+    assert.neq( -1, arrayFind( testColl, collName ) );
+  }
 };
 
 MSolrDBTest.prototype.indexAllShouldNotIncludeSystemCollectionTest = function () {
   var configDoc;
   var indexedColl;
-  var indexResult;
+  var collName;
   var solr = new MSolrDb( this.configColl, SOLR_SERVER_LOC, TEST_DB_2.name );
 
   solr.indexAll( true );
 
   configDoc = this.configColl.findOne( this.serverConfigCriteria );
-  indexedColl = configDoc[MSolrConst.NS_KEY];
+  indexedColl = configDoc[MSolrConst.LIST_KEY];
 
-  for( var ns in indexedColl ) {
-    assert( !/^[^.]*\.system\..*/.test( ns ) );
+  for ( var i = indexedColl.length; i--; ) {
+    collName = extractCollName( indexedColl[i][MSolrConst.NS_KEY] );
+    assert( !/^[^.]*\.system\..*/.test( collName ) );
   }
 };
 
@@ -153,31 +163,35 @@ MSolrDBTest.prototype.indexAllShouldProperlySetDottedCollectionNamesTest = funct
   solr.indexAll( true );
 
   configDoc = this.configColl.findOne( this.serverConfigCriteria );
-  assert.eq( ns, configDoc[MSolrConst.NS_KEY] );
+  assert.eq( ns, configDoc[MSolrConst.LIST_KEY][0][MSolrConst.NS_KEY] );
 };
 
 MSolrDBTest.prototype.indexShouldAddOneCollectionTest = function () {
   var configDoc;
+  var indexedColl;
   var newIndex = "qwerty";
   var ns = TEST_DB_1.name + "." + newIndex;
 
   this.solrDB.index( newIndex, null, true );
   configDoc = this.configColl.findOne( this.serverConfigCriteria );
+  indexedColl = configDoc[MSolrConst.LIST_KEY];
 
-  assert.eq( ns, configDoc[MSolrConst.NS_KEY] );
+  assert.eq( 1, indexedColl.length );
+  assert.eq( ns, configDoc[MSolrConst.LIST_KEY][0][MSolrConst.NS_KEY] );
 };
 
 MSolrDBTest.prototype.removeIndexTest = function () {
   var configDoc;
-  var indexResult;
+  var indexedColl;
   var newIndex = "qwerty";
   var ns = TEST_DB_1.name + "." + newIndex;
 
   this.solrDB.index( newIndex );
   this.solrDB.remove( newIndex, true );
   configDoc = this.configColl.findOne( this.serverConfigCriteria );
+  indexedColl = configDoc[MSolrConst.LIST_KEY];
 
-  assert.eq( null, configDoc );
+  assert.eq( 0, indexedColl.length );
 };
 
 JSTester.run( new MSolrDBTest() );

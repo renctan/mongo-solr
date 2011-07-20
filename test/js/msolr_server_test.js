@@ -37,6 +37,17 @@ MSolrServerTest.prototype.teardown = function () {
   this.configDB.dropDatabase();
 };
 
+MSolrServerTest.prototype.creatingNewInstanceInsertsNewEntryTest = function () {
+  var result = this.configColl.findOne( this.serverConfigCriteria );
+
+  assert.neq( null, result );
+};
+
+MSolrServerTest.prototype.creatingAnotherNewInstanceDoesntInsertsNewEntryTest = function () {
+  var anotherSolr = new MSolrServer( this.configColl, SOLR_SERVER_LOC );
+  assert.eq( 1, this.configColl.count( this.serverConfigCriteria ) );
+};
+
 MSolrServerTest.prototype.dbTest = function () {
   var configDoc;
   var solrDB = this.solr.db( TEST_DB_1_NAME );
@@ -45,7 +56,7 @@ MSolrServerTest.prototype.dbTest = function () {
   solrDB.index( "dummy", null, true );
 
   configDoc = this.configColl.findOne( this.serverConfigCriteria );
-  assert.eq( TEST_DB_1_NAME + ".dummy", configDoc[MSolrConst.NS_KEY] );
+  assert.eq( TEST_DB_1_NAME + ".dummy", configDoc[MSolrConst.LIST_KEY][0][MSolrConst.NS_KEY] );
 };
 
 MSolrServerTest.prototype.removeDBwithOneDBExistingTest = function () {
@@ -57,11 +68,12 @@ MSolrServerTest.prototype.removeDBwithOneDBExistingTest = function () {
   this.solr.removeDB( TEST_DB_1_NAME, true );
 
   configDoc = this.configColl.findOne( this.serverConfigCriteria );
-  assert.eq( null, configDoc );
+  assert.eq( 0, configDoc[MSolrConst.LIST_KEY].length );
 };
 
 MSolrServerTest.prototype.removeDBwithTwoDBExistingTest = function () {
-  var cursor;
+  var result;
+  var nsSet;
 
   // Needs to create a collection in order to have the database created.
   this.solr.db( TEST_DB_1_NAME ).index( "dummy" );
@@ -69,11 +81,13 @@ MSolrServerTest.prototype.removeDBwithTwoDBExistingTest = function () {
 
   this.solr.removeDB( TEST_DB_1_NAME, true );
 
-  cursor = this.configColl.find( this.serverConfigCriteria );
-  cursor.forEach( function ( doc ) {
+  result = this.configColl.findOne( this.serverConfigCriteria );
+  nsSet = result[MSolrConst.LIST_KEY];
+
+  for ( var x = nsSet.length; x--; ) {
     // Only expecting one result
-    assert.eq( TEST_DB_2_NAME + ".another_dummy", doc[MSolrConst.NS_KEY] );
-  });
+    assert.eq( TEST_DB_2_NAME + ".another_dummy", nsSet[x][MSolrConst.NS_KEY] );
+  }
 };
 
 JSTester.run( new MSolrServerTest() );
