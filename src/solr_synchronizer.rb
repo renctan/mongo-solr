@@ -202,7 +202,12 @@ module MongoSolr
         yield :sync, doc_count if block_given?
 
         sleep @update_interval unless @update_interval.zero?
-        cursor = get_oplog_cursor(last_timestamp) if cursor_exception_occured
+
+        # Setting of cursor was deferred until here to do work with Solr while
+        # waiting for Mongo to recover.
+        if cursor_exception_occured then
+          cursor = retry_until_ok { get_oplog_cursor(last_timestamp) }
+        end
       end
     end
 

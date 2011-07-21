@@ -21,14 +21,12 @@ class MongoStarter
   # @param wait [Number] The number of seconds to wait before returning. This is helpful
   #   especially for slow machines since it can have problems creating a database connection
   #   if the mongod has not yet fully started.
-  def start(wait = 0)
+  def start
     if @pipe_io.nil? then
       FileUtils.mkdir_p DATA_DIR
       cmd = "mongod --master --dbpath #{DATA_DIR} --port #{PORT} --logpath /dev/null --quiet"
       @pipe_io = IO.popen(cmd)
     end
-
-    sleep wait
   end
 
   # Stops the mongod process

@@ -1,25 +1,34 @@
-# Tests for handling exceptions with Mongo instance failure. If test is hanging or you get
-# a message "Mongo::ConnectionFailure: Failed to connect to a master node at localhost:27018",
-# try increasing the value of MONGO_STARTUP_TIME.
+# Tests for handling exceptions with Mongo instance failure.
 
 require_relative "../test_helper"
 require "#{PROJ_SRC_PATH}/solr_synchronizer"
 require "fileutils"
+
+# Helper method for keep on trying to execute a block until there is no exception.
+# This is particularly helpful for waiting for the Mongo instance to finish starting up.
+#
+# @param block [Proc] The block procedure to execute
+def retry_until_ok(&block)
+  begin
+    yield
+  rescue
+    sleep 1
+    retry
+  end
+end
 
 class ExceptionHandlingTest < Test::Unit::TestCase
   TEST_DB = "MongoSolrExceptionHandlingIntegrationTestDB"
   TEST_DB_2 = "#{TEST_DB}_2"
   MODE = :auto
   DEFAULT_LOGGER = Logger.new("/dev/null")
-  MONGO_STARTUP_TIME = 10 # Should have enough allowance for mongod to startup
 
   context "Mongo Connection Failure" do
     setup do
       @mongo = MongoStarter.new
-      @mongo.start MONGO_STARTUP_TIME
+      @mongo.start
 
-      @connection = Mongo::Connection.new("localhost", MongoStarter::PORT)
-
+      @connection = retry_until_ok { Mongo::Connection.new("localhost", MongoStarter::PORT) }
       @connection.stubs(:database_names).returns([TEST_DB, TEST_DB_2])
       @test_coll1 = @connection.db(TEST_DB).create_collection("test1")
 
@@ -49,7 +58,7 @@ class ExceptionHandlingTest < Test::Unit::TestCase
         solr.sync { |mode, count| break if mode == :finished_dumping }
       end
 
-      @mongo.start MONGO_STARTUP_TIME
+      @mongo.start
       sync_thread.join
     end
 
@@ -64,12 +73,12 @@ class ExceptionHandlingTest < Test::Unit::TestCase
         if mode == :finished_dumping then
           @mongo.stop
         elsif mode == :excep then
-          @mongo.start MONGO_STARTUP_TIME
+          @mongo.start
 
           @solr.expects(:add).once
           @solr.expects(:commit).at_least(1)
           
-          @test_coll1.insert({x: 1})
+          retry_until_ok { @test_coll1.insert({x: 1}) }
         elsif mode == :sync and count >= 1 then
           break
         else
@@ -99,7 +108,7 @@ class ExceptionHandlingTest < Test::Unit::TestCase
             solr.stop!
           end
 
-          @mongo.start MONGO_STARTUP_TIME
+          @mongo.start
         end
       end
     end
