@@ -5,6 +5,7 @@ module MongoSolr
     SOLR_URL_KEY = "url"
     LIST_KEY = "l"
     NS_KEY = "ns"
+    TIMESTAMP_KEY = "ts"
     COLL_FIELD_KEY = "f"
   end
 end
