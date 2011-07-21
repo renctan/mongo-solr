@@ -42,6 +42,9 @@ MSolrDb.prototype.indexAll = function ( wait ){
  * @param {String} coll The name of the collection to index.
  * @param {String} [field = null] The name of the specific field to index. (Not yet supported)
  * @param {Boolean} [wait = false] Wait till the operation completes before returning.
+ * 
+ * Note: This operation is not atomic, which can result into having more than one entry for
+ *   a given namespace inside a config document, but this does will not affect correctness.
  */
 MSolrDb.prototype.index = function ( coll, field, wait ){
   var ns = this.dbName + "." + coll;

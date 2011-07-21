@@ -26,7 +26,6 @@ var MSolr = function ( configDBName, configCollName ){
   this.db = conn.getDB( dbName );
   this.coll = this.db.getCollection( collName );
   ensureIdxCriteria[MSolrConst.SOLR_URL_KEY] = 1;
-  ensureIdxCriteria[MSolrConst.NS_KEY] = 1;
 
   this.coll.ensureIndex( ensureIdxCriteria, { "unique": true } );
 };
