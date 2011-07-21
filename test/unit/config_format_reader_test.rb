@@ -4,43 +4,41 @@ require "#{PROJ_SRC_PATH}/config_format_reader"
 class ConfigFormatReaderTest < Test::Unit::TestCase
   include MongoSolr
 
-  SAMPLE_SOLR_LOC = "http://localhost::8983/solr"
-  SAMPLE_ENTRIES =
-  [
-   {
-     SolrConfigConst::SOLR_URL_KEY => SAMPLE_SOLR_LOC,
-     SolrConfigConst::NS_KEY => "courses.undergrad",
-     SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
-   },
-   {
-     SolrConfigConst::SOLR_URL_KEY => SAMPLE_SOLR_LOC,
-     SolrConfigConst::NS_KEY => "courses.masters",
-     SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
-   },
-   {
-     SolrConfigConst::SOLR_URL_KEY => SAMPLE_SOLR_LOC,
-     SolrConfigConst::NS_KEY => "courses.doctoral",
-     SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
-   },
-   {
-     SolrConfigConst::SOLR_URL_KEY => SAMPLE_SOLR_LOC,
-     SolrConfigConst::NS_KEY => "staff.prof",
-     SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
-   },
-   {
-     SolrConfigConst::SOLR_URL_KEY => SAMPLE_SOLR_LOC,
-     SolrConfigConst::NS_KEY => "staff.admin",
-     SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
-   }
-  ]
+  SAMPLE_ENTRY =
+  {
+    SolrConfigConst::SOLR_URL_KEY => "http://localhost::8983/solr",
+    SolrConfigConst::LIST_KEY =>
+    [
+     {
+       SolrConfigConst::NS_KEY => "courses.undergrad",
+       SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
+     },
+     {
+       SolrConfigConst::NS_KEY => "courses.masters",
+       SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
+     },
+     {
+       SolrConfigConst::NS_KEY => "courses.doctoral",
+       SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
+     },
+     {
+       SolrConfigConst::NS_KEY => "staff.prof",
+       SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
+     },
+     {
+       SolrConfigConst::NS_KEY => "staff.admin",
+       SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
+     },
+    ]
+  }
 
   context "basic test" do
     setup do
-      @reader = MongoSolr::ConfigFormatReader.new(SAMPLE_ENTRIES)
+      @reader = MongoSolr::ConfigFormatReader.new(SAMPLE_ENTRY)
     end
 
     should "extract solr location correctly" do
-      assert_equal(SAMPLE_SOLR_LOC, @reader.solr_loc)
+      assert_equal(SAMPLE_ENTRY[SolrConfigConst::SOLR_URL_KEY], @reader.solr_loc)
     end
 
     should "extract db_set correctly" do

@@ -4,45 +4,46 @@ require "#{PROJ_SRC_PATH}/mongodb_config_source"
 class ConfigDBFixture
   include MongoSolr
 
-  SOLR_LOC_1 = "http://localhost:8983/solr"
   SOLR_LOC1_CONFIG =
-  [
-   {
-     SolrConfigConst::SOLR_URL_KEY => SOLR_LOC_1,
-     SolrConfigConst::NS_KEY => "courses.undergrad",
-     SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
-   },
-   {
-     SolrConfigConst::SOLR_URL_KEY => SOLR_LOC_1,
-     SolrConfigConst::NS_KEY => "courses.masters",
-     SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
-   }
-  ]
+  {
+    SolrConfigConst::SOLR_URL_KEY => "http://localhost:8983/solr",
+    SolrConfigConst::LIST_KEY =>
+    [
+     {
+       SolrConfigConst::NS_KEY => "courses.undergrad",
+       SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
+     },
+     {
+       SolrConfigConst::NS_KEY => "courses.masters",
+       SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
+     }
+    ]
+  }
 
-  SOLR_LOC_2 = "http://somewhere.out.there:4321/solr"
   SOLR_LOC2_CONFIG =
-  [
-   {
-     SolrConfigConst::SOLR_URL_KEY => SOLR_LOC_2,
-     SolrConfigConst::NS_KEY => "courses.doctoral",
-     SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
-   },
-   {
-     SolrConfigConst::SOLR_URL_KEY => SOLR_LOC_2,
-     SolrConfigConst::NS_KEY => "staff.prof",
-     SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
-   },
-   {
-     SolrConfigConst::SOLR_URL_KEY => SOLR_LOC_2,
-     SolrConfigConst::NS_KEY => "staff.admin",
-     SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
-   }
-  ]
+  {
+    SolrConfigConst::SOLR_URL_KEY => "http://somewhere.out.there:4321/solr",
+    SolrConfigConst::LIST_KEY =>
+    [
+     {
+       SolrConfigConst::NS_KEY => "courses.doctoral",
+       SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
+     },
+     {
+       SolrConfigConst::NS_KEY => "staff.prof",
+       SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
+     },
+     {
+       SolrConfigConst::NS_KEY => "staff.admin",
+       SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
+     }
+    ]
+  }
 
   def self.all_config_table
     {
-      SOLR_LOC_1 => SOLR_LOC1_CONFIG,
-      SOLR_LOC_2 => SOLR_LOC2_CONFIG
+      SOLR_LOC1_CONFIG[SolrConfigConst::SOLR_URL_KEY] => SOLR_LOC1_CONFIG,
+      SOLR_LOC2_CONFIG[SolrConfigConst::SOLR_URL_KEY] => SOLR_LOC2_CONFIG
     }
   end
 
@@ -76,20 +77,20 @@ class MongoDBConfigSourceTest < Test::Unit::TestCase
 
       solr_servers = solr_set.keys
 
-      config.each do |docs|
-        count = count + docs.size
-        server_name = docs.first[MongoSolr::SolrConfigConst::SOLR_URL_KEY]
+      config.each do |doc|
+        count += 1
+        server_name = doc[MongoSolr::SolrConfigConst::SOLR_URL_KEY]
 
         assert(solr_servers.include?(server_name))
         solr_servers.delete server_name
 
-        fixture_docs_ns = solr_set[server_name].map do |doc|
-          doc[MongoSolr::SolrConfigConst::NS_KEY]
+        ns_list = solr_set[server_name][MongoSolr::SolrConfigConst::LIST_KEY]
+        fixture_docs_ns = ns_list.map do |ns_entry|
+          ns_entry[MongoSolr::SolrConfigConst::NS_KEY]
         end
 
-        assert_equal(fixture_docs_ns.size, docs.size)
-        docs.each do |doc|
-          assert(fixture_docs_ns.include?(doc[MongoSolr::SolrConfigConst::NS_KEY]))
+        doc[MongoSolr::SolrConfigConst::LIST_KEY].each do |ns_entry|
+          assert(fixture_docs_ns.include?(ns_entry[MongoSolr::SolrConfigConst::NS_KEY]))
         end
       end
 

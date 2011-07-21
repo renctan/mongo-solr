@@ -15,43 +15,19 @@ module MongoSolr
     # @inheritDoc
     def each(&block)
       if block_given? then
-        cursor = @coll.find({}, { :sort => [ SolrConfigConst::SOLR_URL_KEY, :asc ] })
-        config_data = []
-        current_server = ""
+        cursor = @coll.find
 
-        begin
-          doc = cursor.next_document
-        rescue => e
-          @logger.error e.message unless @logger.nil?
-          return self
-        end
-
-        stop = false
-        while not stop do
-          unless doc.nil? then
-            new_server = doc[SolrConfigConst::SOLR_URL_KEY]
-
-            if new_server != current_server then
-              yield config_data unless config_data.empty?
-
-              config_data.clear
-              current_server = new_server
-            end
-
-            config_data << doc
-
-            begin
-              doc = cursor.next_document
-            rescue => e
-              @logger.error e.message unless @logger.nil?
-              return self
-            end
-          else
-            stop = true
+        loop do
+          begin
+            doc = cursor.next_document          
+          rescue => e
+            @logger.error e.message unless @logger.nil?
+            return self
           end
-        end
 
-        yield config_data unless config_data.empty?
+          break if doc.nil?
+          yield doc
+        end
       end
 
       return self
