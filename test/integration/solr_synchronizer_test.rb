@@ -47,11 +47,14 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set,
                                              { :logger => DEFAULT_LOGGER })
 
-      @solr.expects(:add).at_most_once
-      @solr.expects(:commit).twice # during and after dump
+      @solr.stubs(:add)
+      @solr.stubs(:commit)
 
       solr.sync do |mode, doc_count|
         if mode == :finished_dumping then
+          @solr.expects(:add).once
+          @solr.expects(:commit).once
+
           @test_coll1.insert({ "msg" => "Hello world!" })
         elsif mode == :sync then
           break
@@ -63,11 +66,14 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set,
                                              { :logger => DEFAULT_LOGGER })
 
-      @solr.expects(:add).twice
-      @solr.expects(:commit).times(2..3) # during and after dump
+      @solr.stubs(:add)
+      @solr.stubs(:commit)
 
       solr.sync do |mode, doc_count|
         if mode == :finished_dumping then
+          @solr.expects(:add).twice
+          @solr.expects(:commit).times(1..2)
+
           @test_coll1.insert({ "msg" => "Hello world!" })
           @test_coll2.insert({ "author" => "Matz" })
         elsif mode == :sync and doc_count >= 2 then
@@ -82,11 +88,14 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set,
                                              { :logger => DEFAULT_LOGGER })
 
-      @solr.expects(:add).twice
-      @solr.expects(:commit).twice # during and after dump
+      @solr.stubs(:add)
+      @solr.stubs(:commit)
 
       solr.sync do |mode, doc_count|
         if mode == :finished_dumping then
+          @solr.expects(:add).once
+          @solr.expects(:commit).once
+
           @test_coll1.update({ "msg" => "Hello world!" }, {"$set" => {"from" => "Tim Berners"}})
         elsif mode == :sync then
           break
@@ -141,12 +150,15 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set,
                                              { :logger => DEFAULT_LOGGER })
 
-      @solr.expects(:add).at_most(3)
-      @solr.expects(:delete_by_id).once
-      @solr.expects(:commit).times(2..4) # during and after dump
+      @solr.stubs(:add)
+      @solr.stubs(:commit)
 
       solr.sync do |mode, doc_count|
         if mode == :finished_dumping then
+          @solr.expects(:add).twice
+          @solr.expects(:delete_by_id).once
+          @solr.expects(:commit).times(1..3)
+
           @test_coll1.update({ "msg" => "Hello world!" }, {"$set" => {"from" => "Tim Berners"}})
           @test_coll1.remove({ "msg" => "Hello world!" })
           @test_coll1.insert({ "lang" => "Ruby" })
