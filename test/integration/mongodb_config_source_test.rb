@@ -1,55 +1,25 @@
 require_relative "../test_helper"
+require_relative "../config_db_fixture"
 require "#{PROJ_SRC_PATH}/mongodb_config_source"
 
-class ConfigDBFixture
-  include MongoSolr
+# Simple helper method for getting all the config entries for this test.
+#
+# @return [Hash<String, Hash>] the hash object where the key is the url of the Solr Server
+#   and the value is the document for its configuration.
+def all_config_table
+  url_key = MongoSolr::SolrConfigConst::SOLR_URL_KEY
 
-  SOLR_LOC1_CONFIG =
   {
-    SolrConfigConst::SOLR_URL_KEY => "http://localhost:8983/solr",
-    SolrConfigConst::LIST_KEY =>
-    [
-     {
-       SolrConfigConst::NS_KEY => "courses.undergrad",
-       SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
-     },
-     {
-       SolrConfigConst::NS_KEY => "courses.masters",
-       SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
-     }
-    ]
+    ConfigDBFixture::CONFIG2[url_key] => ConfigDBFixture::CONFIG2,
+    ConfigDBFixture::CONFIG3[url_key] => ConfigDBFixture::CONFIG3
   }
+end
 
-  SOLR_LOC2_CONFIG =
-  {
-    SolrConfigConst::SOLR_URL_KEY => "http://somewhere.out.there:4321/solr",
-    SolrConfigConst::LIST_KEY =>
-    [
-     {
-       SolrConfigConst::NS_KEY => "courses.doctoral",
-       SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
-     },
-     {
-       SolrConfigConst::NS_KEY => "staff.prof",
-       SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
-     },
-     {
-       SolrConfigConst::NS_KEY => "staff.admin",
-       SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
-     }
-    ]
-  }
-
-  def self.all_config_table
-    {
-      SOLR_LOC1_CONFIG[SolrConfigConst::SOLR_URL_KEY] => SOLR_LOC1_CONFIG,
-      SOLR_LOC2_CONFIG[SolrConfigConst::SOLR_URL_KEY] => SOLR_LOC2_CONFIG
-    }
-  end
-
-  def self.all_config
-    return all_config_table.values.flatten
-  end
+# Simple helper method for getting all the configuration documents for this test.
+#
+# @return [Array<Hash>] the list of documents
+def all_config
+  return all_config_table.values.flatten
 end
 
 class MongoDBConfigSourceTest < Test::Unit::TestCase
@@ -61,7 +31,7 @@ class MongoDBConfigSourceTest < Test::Unit::TestCase
   context "basic test" do
     setup do
       @test_coll1 = DB_CONNECTION.db(TEST_DB).create_collection("test1")
-      ConfigDBFixture.all_config.each { |doc| @test_coll1.insert(doc) }
+      all_config.each { |doc| @test_coll1.insert(doc) }
     end
 
     teardown do
@@ -69,8 +39,8 @@ class MongoDBConfigSourceTest < Test::Unit::TestCase
     end
 
     should "iterate all of the cursor results" do
-      data_set = ConfigDBFixture.all_config
-      solr_set = ConfigDBFixture.all_config_table
+      data_set = all_config
+      solr_set = all_config_table
 
       config = MongoSolr::MongoDBConfigSource.new(@test_coll1)
       count = 0

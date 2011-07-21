@@ -1,44 +1,17 @@
 require_relative "../test_helper"
+require_relative "../config_db_fixture"
 require "#{PROJ_SRC_PATH}/config_format_reader"
 
 class ConfigFormatReaderTest < Test::Unit::TestCase
   include MongoSolr
 
-  SAMPLE_ENTRY =
-  {
-    SolrConfigConst::SOLR_URL_KEY => "http://localhost::8983/solr",
-    SolrConfigConst::LIST_KEY =>
-    [
-     {
-       SolrConfigConst::NS_KEY => "courses.undergrad",
-       SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
-     },
-     {
-       SolrConfigConst::NS_KEY => "courses.masters",
-       SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
-     },
-     {
-       SolrConfigConst::NS_KEY => "courses.doctoral",
-       SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
-     },
-     {
-       SolrConfigConst::NS_KEY => "staff.prof",
-       SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
-     },
-     {
-       SolrConfigConst::NS_KEY => "staff.admin",
-       SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
-     },
-    ]
-  }
-
   context "basic test" do
     setup do
-      @reader = MongoSolr::ConfigFormatReader.new(SAMPLE_ENTRY)
+      @reader = MongoSolr::ConfigFormatReader.new(ConfigDBFixture::CONFIG1)
     end
 
     should "extract solr location correctly" do
-      assert_equal(SAMPLE_ENTRY[SolrConfigConst::SOLR_URL_KEY], @reader.solr_loc)
+      assert_equal(ConfigDBFixture::CONFIG1[SolrConfigConst::SOLR_URL_KEY], @reader.solr_loc)
     end
 
     should "extract db_set correctly" do
