@@ -19,20 +19,33 @@ module MongoSolr
     # @param namespace [String] The whole namespace name of the collection to update.
     # @param new_timestamp [BSON::Timestamp] The new timestamp
     def update_timestamp(namespace, new_timestamp)
-      ns_crit_key = "#{SolrConfigConst::LIST_KEY}.#{SolrConfigConst::NS_KEY}"
-      ts_update_key = "#{SolrConfigConst::LIST_KEY}.$.#{SolrConfigConst::TIMESTAMP_KEY}"
-
       begin
         @coll.update({ SolrConfigConst::SOLR_URL_KEY => @solr_loc,
-                       ns_crit_key => namespace
+                       NS_CRIT_KEY => namespace
                      },
                      { "$set" => {
-                         ts_update_key => new_timestamp
+                         TS_UPDATE_KEY => new_timestamp
                        }})
       rescue => e
         @logger.error e.mesage unless @logger.nil?
       end
     end
+
+    # Updates the timestamp when a commit is performed.
+    #
+    # @param timestamp {BSON::Timestamp} The new timestamp
+    def update_commit_timestamp(timestamp)
+      begin
+        @coll.update({ SolrConfigConst::SOLR_URL_KEY => @solr_loc },
+                     { "$set" => { SolrConfigConst::TIMESTAMP_KEY => timestamp }})
+      rescue => e
+        @logger.error e.mesage unless @logger.nil?
+      end
+    end
+
+    private
+    NS_CRIT_KEY = "#{SolrConfigConst::LIST_KEY}.#{SolrConfigConst::NS_KEY}"
+    TS_UPDATE_KEY = "#{SolrConfigConst::LIST_KEY}.$.#{SolrConfigConst::TIMESTAMP_KEY}"
   end
 end
 

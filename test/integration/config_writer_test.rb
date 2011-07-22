@@ -54,6 +54,16 @@ class ConfigWriterTest < Test::Unit::TestCase
 
       assert(result.empty?)
     end
+
+    should "correctly update commit timestamp" do
+      timestamp = BSON::Timestamp.new(123789, 10)
+      @config_writer.update_commit_timestamp(timestamp)
+      @config_coll.db.get_last_error # wait till the update gets reflected
+
+      config_doc = @config_coll.find_one
+      result = config_doc[MongoSolr::SolrConfigConst::TIMESTAMP_KEY]
+      assert_equal(timestamp, result)
+    end
   end
 end
 
