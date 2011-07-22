@@ -5,13 +5,15 @@ require "#{PROJ_SRC_PATH}/config_format_reader"
 class ConfigFormatReaderTest < Test::Unit::TestCase
   include MongoSolr
 
+  CONFIG_DATA = ConfigDBFixture::CONFIG1
+
   context "basic test" do
     setup do
-      @reader = MongoSolr::ConfigFormatReader.new(ConfigDBFixture::CONFIG1)
+      @reader = MongoSolr::ConfigFormatReader.new(CONFIG_DATA)
     end
 
     should "extract solr location correctly" do
-      assert_equal(ConfigDBFixture::CONFIG1[SolrConfigConst::SOLR_URL_KEY], @reader.solr_loc)
+      assert_equal(CONFIG_DATA[SolrConfigConst::SOLR_URL_KEY], @reader.solr_loc)
     end
 
     should "extract db_set correctly" do
@@ -28,7 +30,29 @@ class ConfigFormatReaderTest < Test::Unit::TestCase
       assert_equal(2, coll.size)
       assert(coll.include? "prof")
       assert(coll.include? "admin")
-    end    
+    end
+
+    should "extract checkpoint data correctly" do
+      data = @reader.get_checkpoint_data
+
+      assert_equal(CONFIG_DATA[SolrConfigConst::TIMESTAMP_KEY],
+                   data.commit_ts)
+
+      count = 0
+      config_docs = CONFIG_DATA[SolrConfigConst::LIST_KEY]
+      data.each do |ns, ts|
+        count += 1
+
+        index = config_docs.index do |x|
+          x[SolrConfigConst::NS_KEY] == ns and
+            x[SolrConfigConst::TIMESTAMP_KEY] == ts
+        end
+
+        assert_not_equal(nil, index, "#{ns}@#{ts} not found.")
+      end
+
+      assert_equal(config_docs.size, count)
+    end
   end
 end
 

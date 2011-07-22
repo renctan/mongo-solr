@@ -1,5 +1,6 @@
 require "set"
 require_relative "solr_config_const"
+require_relative "checkpoint_data"
 
 module MongoSolr
   # A simple helper class for extracting the configuration information for a Solr Server.
@@ -38,6 +39,21 @@ module MongoSolr
       end
 
       return db_set
+    end
+
+    # @return [MongoSolr::CheckpointData] the checkpoint data extracted from the
+    #   configuration document.
+    def get_checkpoint_data
+      data = CheckpointData.new(@config_data[SolrConfigConst::TIMESTAMP_KEY])
+
+      @config_data[SolrConfigConst::LIST_KEY].each do |ns_entry|
+        namespace = ns_entry[SolrConfigConst::NS_KEY]
+        timestamp = ns_entry[SolrConfigConst::TIMESTAMP_KEY]
+
+        data.set(namespace, timestamp)
+      end
+
+      return data
     end
   end
 end
