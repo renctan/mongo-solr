@@ -34,10 +34,19 @@ class ExceptionHandlingTest < Test::Unit::TestCase
 
       @solr = mock()
 
-      @basic_db_set = {
+      basic_db_set = {
         TEST_DB => Set.new(["test1", "test2"]),
         TEST_DB_2 => Set.new(["test3"])
       }
+
+      config_writer = mock()
+      config_writer.stubs(:update_timestamp)
+      config_writer.stubs(:update_commit_timestamp)
+
+      @solr_sync = MongoSolr::SolrSynchronizer.new(@solr, @connection, config_writer,
+                                                   { :db_set => basic_db_set,
+                                                     :logger => DEFAULT_LOGGER })
+
     end
 
     teardown do
@@ -45,8 +54,6 @@ class ExceptionHandlingTest < Test::Unit::TestCase
     end
 
     should "succesfully dump db contents after failure" do
-      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set,
-                                             { :logger => DEFAULT_LOGGER })
       @test_coll1.insert({foo: "bar"})
       @test_coll1.db.get_last_error
       @mongo.stop
@@ -55,7 +62,7 @@ class ExceptionHandlingTest < Test::Unit::TestCase
       @solr.expects(:commit).at_least(1)
 
       sync_thread = Thread.start do
-        solr.sync { |mode, count| break if mode == :finished_dumping }
+        @solr_sync.sync { |mode, count| break if mode == :finished_dumping }
       end
 
       @mongo.start
@@ -63,13 +70,10 @@ class ExceptionHandlingTest < Test::Unit::TestCase
     end
 
     should "continue updating Solr from the oplog after recovering from connection failure" do
-      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set,
-                                             { :logger => DEFAULT_LOGGER })
-
       @solr.stubs(:add)
       @solr.stubs(:commit)
 
-      solr.sync do |mode, count|
+      @solr_sync.sync do |mode, count|
         if mode == :finished_dumping then
           @mongo.stop
         elsif mode == :excep then
@@ -82,14 +86,13 @@ class ExceptionHandlingTest < Test::Unit::TestCase
         elsif mode == :sync and count >= 1 then
           break
         else
-          Thread.pass
+          sleep 1
         end
       end
     end
 
     should "continue dumping after being disconnected" do
-      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, {},
-                                             { :logger => DEFAULT_LOGGER })
+      @solr_sync.update_db_set({})
 
       @test_coll1.insert({x: 1})
       @test_coll1.db.get_last_error
@@ -97,15 +100,16 @@ class ExceptionHandlingTest < Test::Unit::TestCase
       @solr.stubs(:add)
       @solr.stubs(:commit)
 
-      solr.sync do |mode, count|
+      @solr_sync.sync do |mode, count|
         if mode == :finished_dumping then
           @mongo.stop
 
           @solr.expects(:add).once
           @solr.expects(:commit).at_least(1)
 
-          solr.add_collection(TEST_DB, "test1", false) do |add_coll_mode|
-            solr.stop!
+          @solr_sync.add_collection(TEST_DB, "test1", false) do |add_coll_mode|
+            @solr_sync.stop!
+            false
           end
 
           @mongo.start

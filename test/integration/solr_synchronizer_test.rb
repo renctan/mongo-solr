@@ -7,7 +7,6 @@ class SolrSynchronizerTest < Test::Unit::TestCase
   DB_CONNECTION = Mongo::Connection.new(DB_LOC, DB_PORT)
   TEST_DB = "MongoSolrSynchronizerIntegrationTestDB"
   TEST_DB_2 = "#{TEST_DB}_2"
-  MODE = :auto
   DEFAULT_LOGGER = Logger.new("/dev/null")
 
   context "basic test" do
@@ -18,12 +17,19 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       @connection = DB_CONNECTION
       @connection.stubs(:database_names).returns([TEST_DB, TEST_DB_2])
 
-      @basic_db_set = {
+      basic_db_set = {
         TEST_DB => Set.new(["test1", "test2"]),
         TEST_DB_2 => Set.new(["test3"])
       }
 
       @solr = mock()
+      config_writer = mock()
+      config_writer.stubs(:update_timestamp)
+      config_writer.stubs(:update_commit_timestamp)
+
+      @solr_sync = MongoSolr::SolrSynchronizer.new(@solr, @connection, config_writer,
+                                                    { :db_set => basic_db_set,
+                                                      :logger => DEFAULT_LOGGER })
     end
 
     teardown do
@@ -38,19 +44,14 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
       @solr.expects(:add).times(3)
       @solr.expects(:commit).once
-      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set,
-                                             { :logger => DEFAULT_LOGGER })
-      solr.sync { break }
+      @solr_sync.sync { break }
     end
 
     should "update db insertions to solr after dumping" do
-      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set,
-                                             { :logger => DEFAULT_LOGGER })
-
       @solr.stubs(:add)
       @solr.stubs(:commit)
 
-      solr.sync do |mode, doc_count|
+      @solr_sync.sync do |mode, doc_count|
         if mode == :finished_dumping then
           @solr.expects(:add).once
           @solr.expects(:commit).once
@@ -63,13 +64,10 @@ class SolrSynchronizerTest < Test::Unit::TestCase
     end
 
     should "update multiple db insertions to solr after dumping" do
-      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set,
-                                             { :logger => DEFAULT_LOGGER })
-
       @solr.stubs(:add)
       @solr.stubs(:commit)
 
-      solr.sync do |mode, doc_count|
+      @solr_sync.sync do |mode, doc_count|
         if mode == :finished_dumping then
           @solr.expects(:add).twice
           @solr.expects(:commit).times(1..2)
@@ -85,13 +83,10 @@ class SolrSynchronizerTest < Test::Unit::TestCase
     should "update db updates to solr after dumping" do
       @test_coll1.insert({ "msg" => "Hello world!" })
 
-      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set,
-                                             { :logger => DEFAULT_LOGGER })
-
       @solr.stubs(:add)
       @solr.stubs(:commit)
 
-      solr.sync do |mode, doc_count|
+      @solr_sync.sync do |mode, doc_count|
         if mode == :finished_dumping then
           @solr.expects(:add).once
           @solr.expects(:commit).once
@@ -107,13 +102,10 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       @test_coll1.insert({ "msg" => "Hello world!" })
       @test_coll1.insert({ "foo" => "bar?" })
 
-      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set,
-                                             { :logger => DEFAULT_LOGGER })
-
       @solr.stubs(:add)
       @solr.stubs(:commit)
 
-      solr.sync do |mode, doc_count|
+      @solr_sync.sync do |mode, doc_count|
         if mode == :finished_dumping then
           @test_coll1.update({ "msg" => "Hello world!" }, {"$set" => {"from" => "Tim Berners"}})
           @test_coll1.update({ "foo" => "bar?" }, {"$set" => {"rab" => "oof"}})
@@ -128,14 +120,11 @@ class SolrSynchronizerTest < Test::Unit::TestCase
     should "update deleted db contents to solr after dumping" do
       @test_coll1.insert({ "msg" => "Hello world!" })
 
-      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set,
-                                             { :logger => DEFAULT_LOGGER })
-
       @solr.stubs(:add)
       @solr.expects(:delete_by_id).once
       @solr.expects(:commit).at_least(2) # during and after dump
 
-      solr.sync do |mode, doc_count|
+      @solr_sync.sync do |mode, doc_count|
         if mode == :finished_dumping then
           @test_coll1.remove({ "msg" => "Hello world!" })
         elsif mode == :sync then
@@ -147,13 +136,10 @@ class SolrSynchronizerTest < Test::Unit::TestCase
     should "db inserts, updates and deletes to solr after dumping" do
       @test_coll1.insert({ "msg" => "Hello world!" })
 
-      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set,
-                                             { :logger => DEFAULT_LOGGER })
-
       @solr.stubs(:add)
       @solr.stubs(:commit)
 
-      solr.sync do |mode, doc_count|
+      @solr_sync.sync do |mode, doc_count|
         if mode == :finished_dumping then
           @solr.expects(:add).twice
           @solr.expects(:delete_by_id).once
@@ -169,29 +155,23 @@ class SolrSynchronizerTest < Test::Unit::TestCase
     end
 
     should "not update after stopped." do
-      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set,
-                                             { :logger => DEFAULT_LOGGER })
-
       @solr.expects(:add).never
       @solr.stubs(:commit)
 
-      solr.sync { solr.stop! }
+      @solr_sync.sync { @solr_sync.stop! }
       @test_coll1.insert({ "lang" => "Ruby" })
     end
 
     should "sync after several cycles of start/stop." do
-      solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @basic_db_set,
-                                             { :logger => DEFAULT_LOGGER })
-
       @solr.expects(:add).never
       @solr.stubs(:commit)
 
-      solr.sync { solr.stop! }
-      solr.sync { solr.stop! }
+      @solr_sync.sync { @solr_sync.stop! }
+      @solr_sync.sync { @solr_sync.stop! }
 
       @solr.expects(:add).once
 
-      solr.sync do |mode, doc_count|
+      @solr_sync.sync do |mode, doc_count|
         if mode == :finished_dumping then
           @test_coll1.insert({ "msg" => "Hello world!" })
         elsif mode == :sync then
@@ -207,17 +187,16 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
         @db_set_coll1 = {}
         @db_set_coll1[@db.name] = Set.new([@test_coll1.name])
+
+        @solr_sync.update_db_set(@db_set_coll1)
       end
 
       context "pre-defined collection set" do
         should "update on collection in the list (single db)" do
-          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1,
-                                                 { :logger => DEFAULT_LOGGER })
-
           @solr.expects(:add).once
           @solr.expects(:commit).twice
 
-          solr.sync do |mode, doc_count|
+          @solr_sync.sync do |mode, doc_count|
             if mode == :finished_dumping then
               @test_coll1.insert({ "lang" => "Ruby" })
             elsif mode == :sync then
@@ -228,13 +207,12 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
         should "update on collection in the list (2 db)" do
           @db_set_coll1[@db2.name] = Set.new([@test_coll3.name])
-          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1,
-                                                 { :logger => DEFAULT_LOGGER })
+          @solr_sync.update_db_set(@db_set_coll1)
 
           @solr.expects(:add).twice
           @solr.expects(:commit).times(2..3)
 
-          solr.sync do |mode, doc_count|
+          @solr_sync.sync do |mode, doc_count|
             if mode == :finished_dumping then
               @test_coll1.insert({ "lang" => "Ruby" })
               @test_coll3.insert({ "lang" => "Ruby" })
@@ -247,13 +225,10 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         should "update on collection in the list (same db, diff coll)" do
           @db_set_coll1[@db.name].add(@test_coll2.name)
 
-          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1,
-                                                 { :logger => DEFAULT_LOGGER })
-
           @solr.expects(:add).twice
           @solr.expects(:commit).times(2..3)
 
-          solr.sync do |mode, doc_count|
+          @solr_sync.sync do |mode, doc_count|
             if mode == :finished_dumping then
               @test_coll1.insert({ "lang" => "Ruby" })
               @test_coll2.insert({ "auth" => "Matz" })
@@ -264,13 +239,10 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         end
 
         should "not update on collection not in the list (different db)" do
-          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1,
-                                                 { :logger => DEFAULT_LOGGER })
-
           @solr.expects(:add).never
           @solr.stubs(:commit)
 
-          solr.sync do |mode, doc_count|
+          @solr_sync.sync do |mode, doc_count|
             if mode == :finished_dumping then
               @test_coll3.insert({ "lang" => "Ruby" })
             elsif mode == :sync then
@@ -280,13 +252,10 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         end
 
         should "not update on collection not in the list (same db, diff coll)" do
-          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1,
-                                                 { :logger => DEFAULT_LOGGER })
-
           @solr.expects(:add).never
           @solr.stubs(:commit)
 
-          solr.sync do |mode, doc_count|
+          @solr_sync.sync do |mode, doc_count|
             if mode == :finished_dumping then
               @test_coll2.insert({ "lang" => "Ruby" })
             elsif mode == :sync then
@@ -297,16 +266,17 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       end
 
       context "dynamic collection set modification using the add_collection API" do
-        should "update after being added in the list (single db)" do
-          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, {},
-                                                 { :logger => DEFAULT_LOGGER })
+        setup do
+          @solr_sync.update_db_set({})
+        end
 
+        should "update after being added in the list (single db)" do
           @solr.expects(:add).once
           @solr.stubs(:commit)
 
-          solr.sync do |mode, doc_count|
+          @solr_sync.sync do |mode, doc_count|
             if mode == :finished_dumping then
-              solr.add_collection(TEST_DB, @test_coll1.name, true)
+              @solr_sync.add_collection(TEST_DB, @test_coll1.name, true)
               @test_coll1.insert({ "auth" => "Matz" })
             else
               break
@@ -315,15 +285,12 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         end
 
         should "not update after if not in the set calling add_collection (single db)" do
-          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, {},
-                                                 { :logger => DEFAULT_LOGGER })
-
           @solr.expects(:add).never
           @solr.stubs(:commit)
 
-          solr.sync do |mode, doc_count|
+          @solr_sync.sync do |mode, doc_count|
             if mode == :finished_dumping then
-              solr.add_collection(TEST_DB, @test_coll2.name, true)
+              @solr_sync.add_collection(TEST_DB, @test_coll2.name, true)
               @test_coll1.insert({ "auth" => "Matz" })
             else
               break
@@ -333,17 +300,18 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       end
 
       context "dynamic collection set modification using the update_db_set API" do
-        should "should update on new entry added in the set (same db)" do
-          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1,
-                                                 { :logger => DEFAULT_LOGGER })
+        setup do
+          @solr_sync.update_db_set(@db_set_coll1)
+        end
 
+        should "should update on new entry added in the set (same db)" do
           @solr.expects(:add).once
           @solr.stubs(:commit)
 
-          solr.sync do |mode, doc_count|
+          @solr_sync.sync do |mode, doc_count|
             if mode == :finished_dumping then
               @db_set_coll1[@db.name] << @test_coll2.name
-              solr.update_db_set(@db_set_coll1, true)
+              @solr_sync.update_db_set(@db_set_coll1, true)
               @test_coll2.insert({ "auth" => "Matz" })
             else
               break
@@ -352,16 +320,13 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         end
 
         should "should update on new entry added in the set (different db)" do
-          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1,
-                                                 { :logger => DEFAULT_LOGGER })
-
           @solr.expects(:add).once
           @solr.stubs(:commit)
 
-          solr.sync do |mode, doc_count|
+          @solr_sync.sync do |mode, doc_count|
             if mode == :finished_dumping then
               @db_set_coll1[@db2.name] = Set.new([@test_coll3.name])
-              solr.update_db_set(@db_set_coll1, true)
+              @solr_sync.update_db_set(@db_set_coll1, true)
               @test_coll3.insert({ "auth" => "Matz" })
             else
               break
@@ -371,16 +336,15 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
         should "should not update on entry removed from the set" do
           @db_set_coll1[@db.name] << @test_coll2.name
-          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1,
-                                                 { :logger => DEFAULT_LOGGER })
+          @solr_sync.update_db_set(@db_set_coll1)
 
           @solr.expects(:add).never
           @solr.stubs(:commit)
 
-          solr.sync do |mode, doc_count|
+          @solr_sync.sync do |mode, doc_count|
             if mode == :finished_dumping then
               @db_set_coll1[@db.name] = Set.new([@test_coll1.name])
-              solr.update_db_set(@db_set_coll1, true)
+              @solr_sync.update_db_set(@db_set_coll1, true)
               @test_coll2.insert({ "auth" => "Matz" })
             else
               break
@@ -390,18 +354,19 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       end
 
       context "backlog update testing" do
-        should "update perform all inserts in the backlog" do
-          solr = MongoSolr::SolrSynchronizer.new(@solr, @connection, MODE, @db_set_coll1,
-                                                 { :logger => DEFAULT_LOGGER })
+        setup do
+          @solr_sync.update_db_set(@db_set_coll1)
+        end
 
+        should "update perform all inserts in the backlog" do
           @solr.stubs(:commit)
 
           sync_thread = Thread.start do
             finished_inserting = false
 
-            solr.sync do |mode|
+            @solr_sync.sync do |mode|
               if mode == :finished_dumping then
-                solr.add_collection(@db2.name, @test_coll3.name) do |add_stage, backlog|
+                @solr_sync.add_collection(@db2.name, @test_coll3.name) do |add_stage, backlog|
                   if add_stage == :finished_dumping and not finished_inserting then
                     @test_coll3.insert({ "lang" => "Ruby" })
                     @test_coll3.insert({ "auth" => "Matz" })
@@ -412,7 +377,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
                     Thread.pass
                     true
                   elsif add_stage == :depleted_backlog then
-                    solr.stop!
+                    @solr_sync.stop!
                   else
                     false
                   end

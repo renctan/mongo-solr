@@ -44,9 +44,11 @@ module MongoSolr
     # Run the daemon. This is a blocking call that runs an infinite loop.
     #
     # @param mongo [Mongo::Connection] A connection to the MongoDB instance.
-    # @param config [MongoSolr::ConfigSource] The object that contains the configuration
-    #   information for all the different Solr Servers.
-    # @param mode [Symbol] @see SolrSynchronizer#new
+    # @param config_source [MongoSolr::ConfigSource] The object that contains the
+    #   configuration information for all the different Solr Servers.
+    # @param config_writer_builder [MongoSolr::ConfigWriterBuilder] The object that can
+    #   create writer objects to be used for modifying the configuration.
+    # @option mode [Symbol] :mode @see SolrSynchronizer#new
     # @option opt [Logger] :logger The object to use for logging. The default logger outputs
     #   to STDOUT.
     # @option opt [number] :config_poll_interval (1) Number of seconds before checking for
@@ -55,7 +57,7 @@ module MongoSolr
     #    new updates in the database
     # @option opt [number] :err_retry_interval (1) The interval in seconds to retry again
     #    after encountering an error in the Solr server or MongoDB instance.
-    def self.run(mongo, config, mode, opt = {})
+    def self.run(mongo, config_source, config_writer_builder, mode, opt = {})
       config_poll_interval = opt[:config_poll_interval] || 1
       logger = opt[:logger] || Logger.new(STDOUT)
       solr_sync_set = {}
@@ -63,7 +65,7 @@ module MongoSolr
       loop do
         new_solr_sync_set = {}
 
-        config.each do |config_data|
+        config_source.each do |config_data|
           solr_config = ConfigFormatReader.new(config_data)
 
           url = solr_config.solr_loc
@@ -75,9 +77,12 @@ module MongoSolr
             solr_sync_set.delete url
           elsif Util.url_ok?(url, logger) then
             solr = RSolr.connect(:url => url)
+            config_writer = config_writer_builder.create_writer(url)
+
+            opt[:db_set] = new_db_set
+
             solr_sync =
-              SolrSyncThread.new(SolrSynchronizer.new(solr, mongo, mode,
-                                                      new_db_set, opt))
+              SolrSyncThread.new(SolrSynchronizer.new(solr, mongo, config_writer, opt))
             solr_sync.start
           else
             solr_sync = nil

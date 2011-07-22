@@ -19,16 +19,17 @@ if $0 == __FILE__ then
   logger = Logger.new(STDOUT)
 
   config_db_name = MongoSolr::MongoDBConfigSource.get_config_db_name(mongo)
-  config_reader = MongoSolr::MongoDBConfigSource.new(mongo.db(config_db_name).
-                                                     collection(CONFIG_COLL_NAME),
-                                                     logger)
+  config_coll = mongo.db(config_db_name).collection(CONFIG_COLL_NAME)
+  config_reader = MongoSolr::MongoDBConfigSource.new(config_coll, logger)
+  config_writer_builder = MongoSolr::ConfigWriterBuilder.new(config_coll, logger)
 
   daemon_opt = {
+    :mode => options.mode,
     :config_poll_interval => options.config_interval,
     :interval => options.interval,
     :logger => logger
   }
 
-  MongoSolr::Daemon.run(mongo, config_reader, options.mode, daemon_opt)
+  MongoSolr::Daemon.run(mongo, config_reader, config_writer_builder, daemon_opt)
 end
 

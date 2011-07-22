@@ -16,11 +16,13 @@ module MongoSolr
     #
     # @param solr [RSolr::Client] The client to the Solr server to populate database documents.
     # @param mongo_connection [Mongo::Connection] The connection to the database to synchronize.
-    # @param mode [Symbol] Mode of the MongoDB server connected to. Accepted symbols - :repl_set,
-    #   :master_slave, :auto
-    # @param db_set [Hash<String, Set<String> >] ({}) The set of databases and their
-    #   collections to index to Solr. The key should contain the database name in
-    #   String and the value should be an array that contains the names of collections.
+    # @param config_writer [MongoSolr::ConfigWriter] The object that can be used to update
+    #   the configuration.
+    #
+    # @option opt [Symbol] :mode (:auto) Mode of the MongoDB server connected to. Recognized 
+    #   symbols - :repl_set, :master_slave, :auto
+    # @option opt [Hash<String, Set<String> >] :db_set ({}) The set of databases and their
+    #   collections to index to Solr. @see #update_db_set
     # @option opt [Logger] :logger The object to use for logging. The default logger outputs
     #   to stdout.
     # @option opt [String] :name ("") A string label that will be prefixed to all log outputs.
@@ -37,17 +39,19 @@ module MongoSolr
     #  mongo = Mongo::Connection.new("localhost", 27017)
     #  solr_client = RSolr.connect(:url => "http://localhost:8983/solr")
     #  solr = MongoSolr::SolrSynchronizer.new(solr_client, mongo, :master_slave)
-    def initialize(solr, mongo_connection, mode, db_set = {}, opt = {})
+    def initialize(solr, mongo_connection, config_writer, opt = {})
       @db_connection = mongo_connection
-      @mode = mode
+      @mode = opt[:mode] || :auto
       @logger = opt[:logger] || Logger.new(STDOUT)
       @name = opt[:name] || ""
       @update_interval = opt[:interval] || 0
       @err_retry_interval = opt[:err_retry_interval] || 1
+      @config_writer = config_writer
 
       @solr = SolrRetryDecorator.new(solr, @err_retry_interval, @logger)
 
       # The set of collections to listen to for updates in the oplogs.
+      db_set = opt[:db_set] || {}
       @db_set = MongoSolr::SynchronizedHash.new(db_set)
 
       # The oplog data for collections that are still in the process of dumping.
@@ -78,10 +82,9 @@ module MongoSolr
 
     # Replaces the current set of collection to listen with a new one.
     #
-    # @param new_db_set [Hash<String, Set<String> >] The set of databases and their
+    # @param new_db_set [Hash<String, Array<Hash> >] The set of databases and their
     #   collections to index to Solr. The key should contain the database name in
-    #   String and the value should be an array that contains the names of collections.
-    #   An empty hash means that everything will be indexed.
+    #   String and the value should be an array that contains the collections.
     # @param wait [Boolean] Waits until the newly added sets are not in a backlogged state
     #   before returning if set to true. Defaults to false.
     def update_db_set(new_db_set, wait = false)
@@ -122,6 +125,8 @@ module MongoSolr
     # blocking call that contains an infinite loop. This method assumes that the databases
     # are already authenticated.
     #
+    # @option opt [MongoSolr::CheckpointData] :checkpt (nil) This will be used to
+    #   continue from a previous session if given.
     # @param block [Proc(mode, doc_count)] An optional  procedure that will be called during
     #   certain conditions:
     #
@@ -137,7 +142,7 @@ module MongoSolr
     # auth = { "users" => { :user => "root", :pwd => "root" },
     #          "admin" => { :user => "admin", :pwd => "" } }
     # solr.sync({ :db_pass => auth, :interval => 1 })
-    def sync(&block)
+    def sync(opt = {}, &block)
       # Lock usage:
       # 1. @stop_mutex->@synching_mutex
       # 2. get_db_set_snapshot()
@@ -155,11 +160,20 @@ module MongoSolr
         end
       end
 
-      last_timestamp = get_last_oplog_timestamp
-      cursor = get_oplog_cursor(last_timestamp)
+      checkpoint_data = opt[:checkpt]
 
-      db_set_snapshot = get_db_set_snapshot
-      dump_db_contents(db_set_snapshot)
+      if checkpoint_data.nil? then
+        cursor = retry_until_ok { get_last_update_cursor }
+
+        if cursor.nil? then
+          cursor = retry_until_ok { get_oplog_cursor(get_last_oplog_timestamp) }
+          db_set_snapshot = get_db_set_snapshot
+          dump_db_contents(db_set_snapshot)
+        end
+      else
+        # TODO: implement
+      end
+
       yield :finished_dumping, 0 if block_given?
 
       loop do
@@ -191,22 +205,28 @@ module MongoSolr
               doc_count += 1
             end
 
-            last_timestamp = doc["ts"]
+            @last_update = doc["ts"]
           end
 
           return if stop_synching?
           break if doc_count > OPLOG_BATCH_SIZE
         end
 
-        update_solr(doc_batch)
+        update_solr(doc_batch, true)
+
         yield :sync, doc_count if block_given?
 
         sleep @update_interval unless @update_interval.zero?
 
         # Setting of cursor was deferred until here to do work with Solr while
-        # waiting for Mongo to recover.
+        # waiting for connection to Mongo to recover.
         if cursor_exception_occured then
-          cursor = retry_until_ok { get_oplog_cursor(last_timestamp) }
+          cursor = retry_until_ok { get_last_update_cursor }
+
+          if cursor.nil? then
+            cursor = retry_until_ok { get_oplog_cursor(get_last_oplog_timestamp) }
+            dump_db_contents(db_set_snapshot)
+          end
         end
       end
     end
@@ -279,17 +299,21 @@ module MongoSolr
     #
     # @param oplog_doc_entries [Array<Object>] An array of Mongo documents containing
     #   the oplog entries to apply.
-    def update_solr(oplog_doc_entries)
+    # @param do_timestamp_commit [Boolean] Record the timestamp for when commiting to Solr
+    def update_solr(oplog_doc_entries, do_timestamp_commit = false)
       update_list = {}
+      timestamp = nil
 
       oplog_doc_entries.each do |oplog_entry|
         namespace = oplog_entry["ns"]
         doc = oplog_entry["o"]
+        timestamp = oplog_entry["ts"]
 
         case oplog_entry["op"]
         when "i" then
           @logger.info "#{@name}: adding #{doc.inspect}"
           @solr.add(DocumentTransform.translate_doc(doc))
+          @config_writer.update_timestamp(namespace, timestamp)
 
         when "u" then
           # Batch the documents that needs a new update to minimize DB roundtrips.
@@ -309,6 +333,7 @@ module MongoSolr
 
           @logger.info "#{@name}: deleting #{doc.inspect}"
           @solr.delete_by_id id
+          @config_writer.update_timestamp(namespace, timestamp)
 
         when "n" then
           # NOOP: do nothing
@@ -330,6 +355,8 @@ module MongoSolr
           to_update.each do |doc|
             @logger.info "#{@name}: updating #{doc.inspect}"
             @solr.add(DocumentTransform.translate_doc(doc))
+            # Use the last timestamp from oplog_doc_entries.
+            @config_writer.update_timestamp(namespace, timestamp)
 
             # Remove from the set so there will be less documents to update
             # when an exception occurs and this block is executed again
@@ -339,6 +366,7 @@ module MongoSolr
       end
 
       @solr.commit
+      @config_writer.update_commit_timestamp(timestamp) if do_timestamp_commit
     end
 
     # Helper method for determining whether to apply the oplog entry changes to Solr.
@@ -554,7 +582,7 @@ module MongoSolr
       Mongo::Cursor.new(get_oplog_collection(@mode),
                         { :tailable => true,
                           :selector => {"op" => {"$ne" => "n"},
-                            "ts" => {"$gt" => timestamp } }
+                            "ts" => {"$gte" => timestamp } }
                         })
     end
 
@@ -572,6 +600,26 @@ module MongoSolr
         sleep @err_retry_interval
         retry
       end
+    end
+
+    # @return [Mongo::Cursor] the cursor that points to the next oplog entry to the last
+    #   update. nil if the last known update timestamp is too old.
+    def get_last_update_cursor
+      ret = nil
+
+      unless @last_update.nil? then
+        cursor = get_oplog_cursor(@last_update)
+        doc = cursor.next_document
+
+        if @last_update == doc["ts"] then
+          ret = cursor
+        else
+          @logger.warn("#{@name}: Last update (#{@last_update.inspect}) is too old. " +
+                       "Oldest oplog ts: #{doc["ts"].inspect}")
+        end
+      end
+
+      return ret
     end
   end
 end
