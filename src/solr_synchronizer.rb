@@ -186,6 +186,9 @@ module MongoSolr
         loop do
           begin
             doc = cursor.next_document
+          rescue Mongo::OperationFailure
+            raise "Sync cursor is too state: Cannot catch up with the update rate." + 
+              "Please perform a manual dump."
           rescue => e
             @logger.error "#{@name}: #{e.message}"
             cursor_exception_occured = true
