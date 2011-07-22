@@ -2,6 +2,8 @@
 
 A simple Ruby script for indexing the entire contents of a MongoDB instance (excluding administrative collections) to Solr. Since the scripts relies on polling the oplogs to synchronize the contents of the database with Solr, the database needs to be running on master/slave or replica set configuration.
 
+Please check out the wiki for more details about this project.
+
 # Usage
 
 Simply run the mongo_solr.rb on the root directory. For more details on the configurable options, run the script with the -h option:
