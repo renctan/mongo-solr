@@ -45,6 +45,28 @@ module MongoSolr
 
       return ret
     end
+
+    # Compare two timestamp object values
+    #
+    # @param ts1 [BSON::Timestamp]
+    # @param ts2 [BSON::Timestamp]
+    #
+    # @return [Number] 0 if both are equal, -1 if ts1 < ts2 and 1 otherwise.
+    def self.compare_bson_ts(ts1, ts2)
+      if ts1.seconds < ts2.seconds then
+        return -1
+      elsif ts1.seconds > ts2.seconds then
+        return 1
+      elsif ts1.seconds == ts2.seconds then
+        if ts1.increment < ts2.increment then
+          return -1
+        elsif ts1.increment > ts2.increment then
+          return 1
+        else
+          return 0
+        end
+      end
+    end
   end
 end
 

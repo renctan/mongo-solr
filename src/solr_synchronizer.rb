@@ -7,6 +7,7 @@ require_relative "document_transform"
 require_relative "exception"
 require_relative "synchronized_hash"
 require_relative "solr_retry_decorator"
+require_relative "util"
 
 module MongoSolr
   # A simple class utility for indexing an entire MongoDB database contents (excluding
@@ -47,6 +48,7 @@ module MongoSolr
       @update_interval = opt[:interval] || 0
       @err_retry_interval = opt[:err_retry_interval] || 1
       @config_writer = config_writer
+      @last_update = nil
 
       @solr = SolrRetryDecorator.new(solr, @err_retry_interval, @logger)
 
@@ -127,6 +129,8 @@ module MongoSolr
     #
     # @option opt [MongoSolr::CheckpointData] :checkpt (nil) This will be used to
     #   continue from a previous session if given.
+    # @option opt [Boolean] :wait (false) True means wait for some asynchronous calls to
+    #   actually terminate before proceeding. Useful for testing.
     # @param block [Proc(mode, doc_count)] An optional  procedure that will be called during
     #   certain conditions:
     #
@@ -161,18 +165,9 @@ module MongoSolr
       end
 
       checkpoint_data = opt[:checkpt]
+      wait = opt[:wait] || false
 
-      if checkpoint_data.nil? then
-        cursor = retry_until_ok { get_last_update_cursor }
-
-        if cursor.nil? then
-          cursor = retry_until_ok { get_oplog_cursor(get_last_oplog_timestamp) }
-          db_set_snapshot = get_db_set_snapshot
-          dump_db_contents(db_set_snapshot)
-        end
-      else
-        # TODO: implement
-      end
+      cursor = init_sync(checkpoint_data, wait)
 
       yield :finished_dumping, 0 if block_given?
 
@@ -227,8 +222,9 @@ module MongoSolr
           cursor = retry_until_ok { get_last_update_cursor }
 
           if cursor.nil? then
-            cursor = retry_until_ok { get_oplog_cursor(get_last_oplog_timestamp) }
-            dump_db_contents(db_set_snapshot)
+            # TODO: Too stale. Raise?
+            # cursor = retry_until_ok { get_oplog_cursor(get_last_oplog_timestamp) }
+            # dump_db_contents(db_set_snapshot)
           end
         end
       end
@@ -293,6 +289,8 @@ module MongoSolr
       retry_until_ok do
         db.collection(collection_name).find().each do |doc|
           @solr.add(DocumentTransform.translate_doc(doc))
+          # Do not update commit timestamp since the stream of data from the database
+          # is not guaranteed to be sequential in time.
         end
       end
     end
@@ -302,7 +300,8 @@ module MongoSolr
     #
     # @param oplog_doc_entries [Array<Object>] An array of Mongo documents containing
     #   the oplog entries to apply.
-    # @param do_timestamp_commit [Boolean] Record the timestamp for when commiting to Solr
+    # @param do_timestamp_commit [Boolean] (false) Record the timestamp when commiting to
+    #   Solr
     def update_solr(oplog_doc_entries, do_timestamp_commit = false)
       update_list = {}
       timestamp = nil
@@ -316,7 +315,7 @@ module MongoSolr
         when "i" then
           @logger.info "#{@name}: adding #{doc.inspect}"
           @solr.add(DocumentTransform.translate_doc(doc))
-          @config_writer.update_timestamp(namespace, timestamp)
+          @config_writer.update_timestamp(namespace, timestamp) unless timestamp.nil?
 
         when "u" then
           # Batch the documents that needs a new update to minimize DB roundtrips.
@@ -336,7 +335,7 @@ module MongoSolr
 
           @logger.info "#{@name}: deleting #{doc.inspect}"
           @solr.delete_by_id id
-          @config_writer.update_timestamp(namespace, timestamp)
+          @config_writer.update_timestamp(namespace, timestamp) unless timestamp.nil?
 
         when "n" then
           # NOOP: do nothing
@@ -359,7 +358,7 @@ module MongoSolr
             @logger.info "#{@name}: updating #{doc.inspect}"
             @solr.add(DocumentTransform.translate_doc(doc))
             # Use the last timestamp from oplog_doc_entries.
-            @config_writer.update_timestamp(namespace, timestamp)
+            @config_writer.update_timestamp(namespace, timestamp) unless timestamp.nil?
 
             # Remove from the set so there will be less documents to update
             # when an exception occurs and this block is executed again
@@ -369,7 +368,11 @@ module MongoSolr
       end
 
       @solr.commit
-      @config_writer.update_commit_timestamp(timestamp) if do_timestamp_commit
+
+      if do_timestamp_commit then
+        @config_writer.update_commit_timestamp(timestamp) 
+        @last_update = timestamp
+      end
     end
 
     # Helper method for determining whether to apply the oplog entry changes to Solr.
@@ -484,44 +487,8 @@ module MongoSolr
       current_collection.merge(diff)
 
       if is_synching then
-        db = retry_until_ok { @db_connection.db(db_name) }
-
         diff.each do |coll|
-          oplog_ns = "#{db_name}.#{coll}"
-          @oplog_backlog[oplog_ns] = []
-
-          backlog_sync_thread = Thread.start do
-            dump_collection(db, coll)
-            @solr.commit
-
-            # For testing/debugging only
-            if block_given? then
-              block_val = true
-              while block_val do
-                block_val = yield :finished_dumping, @oplog_backlog[oplog_ns]
-                # Do nothing
-              end
-            end
-            
-            # Consume all oplogs that have accumulated while performing the dump and
-            # while performing this task.
-            @oplog_backlog.use do |backlog, mutex|
-              until backlog[oplog_ns].empty?
-                oplog_entries = backlog[oplog_ns]
-                backlog[oplog_ns] = []
-
-                mutex.unlock
-                update_solr(oplog_entries)
-                mutex.lock
-              end
-
-              backlog.delete(oplog_ns)
-            end
-
-            yield :depleted_backlog if block_given?
-          end
-
-          backlog_sync_thread.join if wait
+          dump_and_sync(db_name, coll, wait, &block)
         end
       end
     end
@@ -576,7 +543,8 @@ module MongoSolr
       cur.next["ts"]
     end
 
-    # Acquire a tailable cursor on the oplog with time greater than the given timestamp.
+    # Acquire a tailable cursor on the oplog with time greater and equal to the given
+    # timestamp.
     #
     # @param timestamp [BSON::Timestamp] The timestamp object.
     #
@@ -623,6 +591,141 @@ module MongoSolr
       end
 
       return ret
+    end
+
+    # Creates a new thread to dump the contents of the given collection to Solr and
+    # tries to get in sync with the main thread by consuming the backlogs inserted
+    # by the main thread for the given namespace.
+    #
+    # @param db_name [String] The name of the database.
+    # @param coll_name [String] The name of the collection.
+    # @param wait [Boolean] Waits for the thread to finish before returning.
+    # @param block [Param] @see #add_collection_wo_lock
+    def dump_and_sync(db_name, coll_name, wait = false, &block)
+      oplog_ns = "#{db_name}.#{coll_name}"
+      @oplog_backlog[oplog_ns] = []
+
+      db = retry_until_ok { @db_connection.db(db_name) }
+
+      backlog_sync_thread = Thread.start do
+        dump_collection(db, coll_name)
+        @solr.commit
+
+        # For testing/debugging only
+        if block_given? then
+          block_val = true
+          while block_val do
+            block_val = yield :finished_dumping, @oplog_backlog[oplog_ns]
+            # Do nothing
+          end
+        end
+        
+        # Consume all oplogs that have accumulated while performing the dump and
+        # while performing this task.
+        @oplog_backlog.use do |backlog, mutex|
+          until backlog[oplog_ns].empty?
+            oplog_entries = backlog[oplog_ns]
+            backlog[oplog_ns] = []
+
+            mutex.unlock
+            update_solr(oplog_entries)
+            mutex.lock
+          end
+
+          backlog.delete(oplog_ns)
+        end
+
+        yield :depleted_backlog if block_given?
+      end
+
+      backlog_sync_thread.join if wait
+    end
+
+    # Sets the state of this object to reflect the state of a given checkpoint.
+    #
+    # @param checkpoint_data [MongoSolr::CheckpointData] The checkpoint data.
+    # @param wait [Boolean] Waits for the dumps to actually finish before proceeding if
+    #   true. Dumps only happen when the checkpoint is too old/stale.
+    def restore_from_checkpoint(checkpoint_data, wait = false)
+      last_ts = checkpoint_data.commit_ts
+      oplog_coll = get_oplog_collection(@mode)
+      docs_to_update = []
+
+      # Make sure that everything before the last commit timestamp is already indexed
+      # to Solr. Possible cases of having these kind of entries include:
+      #
+      # 1. A newly added collection/field to index was not able to completely consume
+      #    its backlog.
+      checkpoint_data.each do |ns, ts|
+        split = ns.split(".")
+        db_name = split.first
+
+        split.delete_at 0
+        coll_name = split.join(".")
+
+        if ts.nil? then
+          dump_and_sync(db_name, coll_name, wait)
+        elsif Util.compare_bson_ts(ts, last_ts) == -1 then
+          doc_results = oplog_coll.find({ "ns" => ns,
+                                          "ts" => {"$gte" => ts, "$lte" => last_ts} }).to_a
+          if (ts != doc_results.shift["ts"]) then
+            # Timestamp is too old that the oplog entry for it is not available anymore
+            dump_and_sync(db_name, coll_name, wait)
+          else
+            docs_to_update.concat(doc_results)
+          end
+        else
+          # No new ops since last update on Solr. Advance to the global commit timestamp.
+          @config_writer.update_timestamp(ns, last_ts)
+        end
+      end
+
+      update_solr(docs_to_update)
+    end
+
+    # Convenience method for initializing the cursor for sync method. Also performs a
+    # database dump when this was called for the first time.
+    #
+    # @param checkpoint_data [MongoSolr::CheckpointData] @see #sync
+    # @param wait [Boolean] @see #sync
+    #
+    # @return [Mongo::Cursor] the cursor to the oplog entry, pointing to the next oplog
+    #   entry to process.
+    def init_sync(checkpoint_data, wait)
+      cursor = nil
+
+      unless checkpoint_data.nil? then
+        restore_from_checkpoint(checkpoint_data, wait)
+        @last_update = checkpoint_data.commit_ts
+        cursor = retry_until_ok { get_last_update_cursor }
+        perform_full_dump if cursor.nil?
+      end
+
+      if @last_update.nil? then
+        cursor = perform_full_dump
+      else
+        cursor = retry_until_ok { get_last_update_cursor }
+        perform_full_dump if cursor.nil?
+      end
+
+      return cursor
+    end
+
+    # Performs a dump of the database (filtered by the current db_set) and returns the
+    # cursor to the oplog that points to the latest entry just before the dump is
+    # performed
+    #
+    # @return [Mongo::Cursor] the oplog cursor
+    def perform_full_dump
+      cursor = retry_until_ok do
+        @last_update = get_last_oplog_timestamp
+        get_last_update_cursor
+      end
+
+      db_set_snapshot = get_db_set_snapshot
+      dump_db_contents(db_set_snapshot)
+
+      return cursor
     end
   end
 end
