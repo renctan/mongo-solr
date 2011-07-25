@@ -8,6 +8,7 @@ require_relative "src/util"
 require_relative "src/argument_parser"
 require_relative "src/mongodb_config_source"
 require_relative "src/daemon"
+require_relative "src/config_writer_builder"
 
 if $0 == __FILE__ then
   CONFIG_COLL_NAME = "mongo_solr"
