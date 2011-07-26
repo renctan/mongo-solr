@@ -1,7 +1,19 @@
 require "test/unit"
+require "rubygems"
 require "shoulda"
 require "mocha"
 require "mongo"
+
+# Copy and pasted from:
+# http://stackoverflow.com/questions/4333286/ruby-require-vs-require-relative-best-practice-to-workaround-running-in-both-r/4718414#4718414
+unless Kernel.respond_to?(:require_relative)
+  module Kernel
+    def require_relative(path)
+      require File.join(File.dirname(caller[0]), path.to_str)
+    end
+  end
+end
+
 require_relative "proj"
 
 # Simple class for starting and stopping the mongod process.

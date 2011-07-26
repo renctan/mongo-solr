@@ -1,4 +1,4 @@
-require_relative "../test_helper"
+require File.expand_path("../../test_helper", __FILE__)
 require "#{PROJ_SRC_PATH}/solr_retry_decorator"
 
 class SolrRetryDecoratorTest < Test::Unit::TestCase
@@ -9,7 +9,7 @@ class SolrRetryDecoratorTest < Test::Unit::TestCase
     end
 
     should "retry add with correct parameters" do
-      doc = { _id: 1, x: 3 }
+      doc = { :_id => 1, :x => 3 }
 
       @solr.stubs(:add).raises(RuntimeError).when(@error.is("yes")).then(@error.is("no"))
       @solr.expects(:add).once.with(doc).when(@error.is("no"))

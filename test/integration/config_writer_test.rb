@@ -1,4 +1,4 @@
-require_relative "../test_helper"
+require File.expand_path("../../test_helper", __FILE__)
 require_relative "../config_db_fixture"
 require "#{PROJ_SRC_PATH}/config_writer"
 

@@ -1,4 +1,4 @@
-require_relative "../test_helper"
+require File.expand_path("../../test_helper", __FILE__)
 require "#{PROJ_SRC_PATH}/solr_synchronizer"
 require "#{PROJ_SRC_PATH}/checkpoint_data"
 
@@ -428,13 +428,13 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       end
 
       should "start indexing from the checkpoint" do
-        @test_coll1.insert({ x: 1 })
-        @test_coll1.update({}, { "$set" => { x: 2 } })
+        @test_coll1.insert({ :x => 1 })
+        @test_coll1.update({}, { "$set" => { :x => 2 } })
         @test_coll1.db.get_last_error
         # hack for getting the last oplog timestamp
         timestamp = @solr_sync.send :get_last_oplog_timestamp
 
-        @test_coll1.insert({ y: "why?" })
+        @test_coll1.insert({ :y => "why?" })
         checkpoint_data = MongoSolr::CheckpointData.new(timestamp)
         checkpoint_data.set(@test_coll1_ns, timestamp)
 
@@ -447,12 +447,12 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       end
 
       should "dump all if timestamp is too old" do
-        @test_coll1.insert({ x: 1 })
-        @test_coll1.insert({ z: 5 })
+        @test_coll1.insert({ :x => 1 })
+        @test_coll1.insert({ :z => 5 })
 
         timestamp = BSON::Timestamp.new(1, 1)
 
-        @test_coll1.insert({ y: "why?" })
+        @test_coll1.insert({ :y => "why?" })
         @test_coll1.db.get_last_error
         checkpoint_data = MongoSolr::CheckpointData.new(timestamp)
         checkpoint_data.set(@test_coll1_ns, timestamp)
@@ -466,12 +466,12 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       end
 
       should "update inserts correctly after performing a checkpoint operation" do
-        @test_coll1.insert({ x: 1 })
+        @test_coll1.insert({ :x => 1 })
         @test_coll1.db.get_last_error
         # hack for getting the last oplog timestamp
         timestamp = @solr_sync.send :get_last_oplog_timestamp
 
-        @test_coll1.update({}, { "$set" => { x: 2 } })
+        @test_coll1.update({}, { "$set" => { :x => 2 } })
         checkpoint_data = MongoSolr::CheckpointData.new(timestamp)
         checkpoint_data.set(@test_coll1_ns, timestamp)
 
@@ -481,7 +481,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         @solr_sync.sync({ :checkpt => checkpoint_data }) do |mode, count|
           if mode == :finished_dumping then
             @solr.expects(:add).once
-            @test_coll1.insert({ y: "why?" })
+            @test_coll1.insert({ :y => "why?" })
           elsif mode == :sync && count >= 1 then
             break
           end
@@ -489,12 +489,12 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       end
 
       should "skip operations older than one's timestamp" do
-        @test_coll1.insert({ x: 1 })
+        @test_coll1.insert({ :x => 1 })
         @test_coll1.db.get_last_error
         # hack for getting the last oplog timestamp
         timestamp1 = @solr_sync.send :get_last_oplog_timestamp
 
-        @test_coll1.remove({ x: 1})
+        @test_coll1.remove({ :x => 1})
         @test_coll1.db.get_last_error
         timestamp2 = @solr_sync.send :get_last_oplog_timestamp
 
@@ -513,9 +513,9 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       end
 
       should "dump all if timestamp is not available" do
-        @test_coll1.insert({ x: 1 })
-        @test_coll1.insert({ z: 5 })
-        @test_coll1.insert({ y: "why?" })
+        @test_coll1.insert({ :x => 1 })
+        @test_coll1.insert({ :z => 5 })
+        @test_coll1.insert({ :y => "why?" })
         @test_coll1.db.get_last_error
 
         # hack for getting the last oplog timestamp
@@ -533,13 +533,13 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       end
 
       should "properly update after skipping ops during checkpoint recovery" do
-        @test_coll1.insert({ x: 1 })
-        @test_coll1.insert({ z: 3 })
+        @test_coll1.insert({ :x => 1 })
+        @test_coll1.insert({ :z => 3 })
         @test_coll1.db.get_last_error
         # hack for getting the last oplog timestamp
         timestamp1 = @solr_sync.send :get_last_oplog_timestamp
 
-        @test_coll1.remove({ x: 1})
+        @test_coll1.remove({ :x => 1})
         @test_coll1.db.get_last_error
         timestamp2 = @solr_sync.send :get_last_oplog_timestamp
 
@@ -554,7 +554,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
             @solr.expects(:add).once
             @solr.expects(:commit).at_least(1)
 
-            @test_coll1.update({ z: 3 }, { "$set" => { z: 5 }})
+            @test_coll1.update({ :z => 3 }, { "$set" => { :z => 5 }})
           elsif mode == :sync and count >= 1 then
             break
           end
