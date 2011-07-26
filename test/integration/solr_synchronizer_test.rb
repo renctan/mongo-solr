@@ -365,16 +365,17 @@ class SolrSynchronizerTest < Test::Unit::TestCase
           sync_thread = Thread.start do
             finished_inserting = false
 
-            @solr_sync.sync do |mode|
+            @solr_sync.sync do |mode, doc_count|
               if mode == :finished_dumping then
                 @solr_sync.add_collection(@db2.name, @test_coll3.name) do |add_stage, backlog|
                   if add_stage == :finished_dumping and not finished_inserting then
                     @test_coll3.insert({ "lang" => "Ruby" })
                     @test_coll3.insert({ "auth" => "Matz" })
+
                     finished_inserting = true
                     @solr.expects(:add).twice
                     true
-                  elsif add_stage == :finished_dumping and backlog.empty? then
+                  elsif add_stage == :finished_dumping and backlog.size < 2 then
                     Thread.pass
                     true
                   elsif add_stage == :depleted_backlog then
@@ -388,6 +389,35 @@ class SolrSynchronizerTest < Test::Unit::TestCase
           end
 
           sync_thread.join
+        end
+
+        should "correctly update inserts after depleting the backlog" do
+          @solr.stubs(:commit)
+
+          finished_inserting = false
+
+          @solr_sync.sync do |mode, doc_count|
+            if mode == :finished_dumping then
+              @solr_sync.add_collection(@db2.name, @test_coll3.name) do |add_stage, backlog|
+                if add_stage == :finished_dumping and not finished_inserting then
+                  @test_coll3.insert({ "lang" => "Ruby" })
+
+                  finished_inserting = true
+                  @solr.expects(:add).twice
+                  true
+                elsif add_stage == :finished_dumping and backlog.size < 1 then
+                  Thread.pass
+                  true
+                elsif add_stage == :depleted_backlog then
+                  @test_coll3.insert({ "auth" => "Matz" })
+                else
+                  false
+                end
+              end
+            elsif mode == :sync and doc_count >= 1 then
+              break
+            end
+          end
         end
       end
     end
