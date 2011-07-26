@@ -6,7 +6,7 @@ Please check out the wiki for more details about this project.
 
 # Ruby version
 
-The scripts can run on both v1.8.7 and 1.9.x, but it is not yet fully tested on v1.8.7, so it is recommended to use 1.9.
+The scripts can run on both v1.8.7 and 1.9.x, but it is not fully tested on v1.8.7, so it is recommended to use this with v1.9.
 
 # Usage
 
@@ -20,13 +20,11 @@ Run the following command to install all the gem dependencies used by this proje
 
     bundle install
 
-Note: You can get bundle from [here](http://gembundler.com/).
+Note: You can get bundle from [here](http://gembundler.com/). And make sure that the gem binary is included in the default executable path.
 
 # Running the test:
 
     rake test:all
-
-Make sure you have at least Ruby v1.9.x to run the tests.
 
 ## Integration and JS Test Assumptions
 
