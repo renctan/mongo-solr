@@ -20,6 +20,7 @@ var MSolr = function ( configDBName, configCollName ){
   this.db = conn.getDB( dbName );
   this.coll = this.db.getCollection( collName );
   ensureIdxCriteria[MSolrConst.SOLR_URL_KEY] = 1;
+  ensureIdxCriteria[MSolrConst.NS_KEY] = 1;
 
   this.coll.ensureIndex( ensureIdxCriteria, { "unique": true } );
 };
@@ -61,7 +62,8 @@ MSolr.prototype.showConfig = function () {
 };
 
 /**
- * Change the url of a server to a new url.
+ * Change the url of a server to a new url. Please note that this operation is not
+ * atomic as there can be several config documents matching the url.
  * 
  * @param {String} originalUrl The original url.
  * @param {String} newUrl The new url.

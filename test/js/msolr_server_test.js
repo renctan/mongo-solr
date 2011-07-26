@@ -37,17 +37,6 @@ MSolrServerTest.prototype.teardown = function () {
   this.configDB.dropDatabase();
 };
 
-MSolrServerTest.prototype.creatingNewInstanceInsertsNewEntryTest = function () {
-  var result = this.configColl.findOne( this.serverConfigCriteria );
-
-  assert.neq( null, result );
-};
-
-MSolrServerTest.prototype.creatingAnotherNewInstanceDoesntInsertsNewEntryTest = function () {
-  var anotherSolr = new MSolrServer( this.configColl, SOLR_SERVER_LOC );
-  assert.eq( 1, this.configColl.count( this.serverConfigCriteria ) );
-};
-
 MSolrServerTest.prototype.dbTest = function () {
   var configDoc;
   var solrDB = this.solr.db( TEST_DB_1_NAME );
@@ -56,38 +45,32 @@ MSolrServerTest.prototype.dbTest = function () {
   solrDB.index( "dummy", null, true );
 
   configDoc = this.configColl.findOne( this.serverConfigCriteria );
-  assert.eq( TEST_DB_1_NAME + ".dummy", configDoc[MSolrConst.LIST_KEY][0][MSolrConst.NS_KEY] );
+  assert.eq( TEST_DB_1_NAME + ".dummy", configDoc[MSolrConst.NS_KEY] );
 };
 
 MSolrServerTest.prototype.removeDBwithOneDBExistingTest = function () {
-  var configDoc;
+  var criteria = {};
   var solrDB = this.solr.db( TEST_DB_1_NAME );
 
   // Needs to create a collection in order to have the database created.
   solrDB.index( "dummy" );
   this.solr.removeDB( TEST_DB_1_NAME, true );
 
-  configDoc = this.configColl.findOne( this.serverConfigCriteria );
-  assert.eq( 0, configDoc[MSolrConst.LIST_KEY].length );
+  criteria[MSolrConst.NS_KEY] = TEST_DB_1_NAME + ".dummy";
+  assert.eq( 0, this.configColl.count( criteria ) );
 };
 
 MSolrServerTest.prototype.removeDBwithTwoDBExistingTest = function () {
-  var result;
-  var nsSet;
-
   // Needs to create a collection in order to have the database created.
   this.solr.db( TEST_DB_1_NAME ).index( "dummy" );
   this.solr.db( TEST_DB_2_NAME ).index( "another_dummy" );
 
   this.solr.removeDB( TEST_DB_1_NAME, true );
 
-  result = this.configColl.findOne( this.serverConfigCriteria );
-  nsSet = result[MSolrConst.LIST_KEY];
-
-  for ( var x = nsSet.length; x--; ) {
+  this.configColl.find( this.serverConfigCriteria ).forEach( function ( doc ) {
     // Only expecting one result
-    assert.eq( TEST_DB_2_NAME + ".another_dummy", nsSet[x][MSolrConst.NS_KEY] );
-  }
+    assert.eq( TEST_DB_2_NAME + ".another_dummy", doc[MSolrConst.NS_KEY] );
+  });
 };
 
 JSTester.run( new MSolrServerTest() );

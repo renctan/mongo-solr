@@ -42,46 +42,23 @@ MSolrDb.prototype.indexAll = function ( wait ){
  * @param {String} coll The name of the collection to index.
  * @param {String} [field = null] The name of the specific field to index. (Not yet supported)
  * @param {Boolean} [wait = false] Wait till the operation completes before returning.
- * 
- * Note: This operation is not atomic, which can result into having more than one entry for
- *   a given namespace inside a config document, but this does will not affect correctness.
  */
 MSolrDb.prototype.index = function ( coll, field, wait ){
   var ns = this.dbName + "." + coll;
   var doWait = wait || false;
-
   var updateDoc = {};
   var fieldDoc = {};
-  var newDoc = {};
-  var neUpdateCriteria = {};
-  var updateCriteria = {};
-  var nsCritKey = MSolrConst.LIST_KEY + "." + MSolrConst.NS_KEY;
-  var updateKey = MSolrConst.LIST_KEY + ".$." + MSolrConst.NS_KEY;
+  var criteria = {};
 
-  var updateResult;
-
-  updateCriteria[MSolrConst.SOLR_URL_KEY] = this.serverLocation;
-  neUpdateCriteria["$ne"] = ns;
-  updateCriteria[nsCritKey] = neUpdateCriteria;
-
-  newDoc[MSolrConst.NS_KEY] = ns;
-  // TODO: add fields
-  updateDoc[MSolrConst.LIST_KEY] = newDoc;
-
-  this.configColl.update( updateCriteria, { $push: updateDoc } );
+  criteria[MSolrConst.SOLR_URL_KEY] = this.serverLocation;
+  criteria[MSolrConst.NS_KEY] = ns;
 
   if ( field != null ) {
-    updateResult = this.configDB.runCommand( { $getLastError: 1 } );
-
-    if ( updateResult.n == 0 ) {
-      // There is an existing entry for the collection already, so modify it directly
-      updateCriteria = {};
-      updateCriteria[MSolrConst.SOLR_URL_KEY] = this.serverLocation;
-      updateCriteria[nsCritKey] = ns;
-
-      // TODO: add code for setting fields
-    }
+    fieldDoc[field] = MSolrDb.INDEX_COLL_FIELD_OPT;
+    updateDoc[MSolrConst.COLL_FIELD_KEY] = fieldDoc;
   }
+
+  this.configColl.update( criteria, { $set: updateDoc }, true );
 
   if ( doWait ) {
     this.configDB.getLastError();
@@ -98,14 +75,11 @@ MSolrDb.prototype.remove = function ( coll, wait ){
   var ns = this.dbName + "." + coll;
   var criteria = {};
   var doWait = wait || false;
-  var updateDoc = {};
-  var pullCriteria = {};
 
   criteria[MSolrConst.SOLR_URL_KEY] = this.serverLocation;
-  pullCriteria[MSolrConst.NS_KEY] = ns;
-  updateDoc[MSolrConst.LIST_KEY] = pullCriteria;
+  criteria[MSolrConst.NS_KEY] = ns;
 
-  this.configColl.update( criteria, { $pull: updateDoc } );
+  this.configColl.remove( criteria );
 
   if ( doWait ) {
     this.configDB.getLastError();
