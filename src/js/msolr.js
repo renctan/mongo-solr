@@ -3,12 +3,6 @@
  * the mongo-solr daemon.
  */
 
-/* Uncomment for debugging
-load("msolr_const.js");
-load("msolr_server.js");
-load("msolr_db.js");
-*/
-
 /**
  * Creates a simple class that is connected to the mongo-solr configuration server.
  * 
@@ -20,7 +14,7 @@ load("msolr_db.js");
 var MSolr = function ( configDBName, configCollName ){
   var conn = new Mongo();
   var dbName = configDBName || MSolr.getConfigDBName( conn );
-  var collName = configCollName || MSolrConst.MONGO_SOLR_COLLECTION_NAME;
+  var collName = configCollName || MSolrConst.CONFIG_COLLECTION_NAME;
   var ensureIdxCriteria = {};
 
   this.db = conn.getDB( dbName );

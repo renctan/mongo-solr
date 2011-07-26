@@ -5,24 +5,25 @@
 # --help for more details on possible options.
 
 require_relative "src/util"
+require_relative "src/daemon"
 require_relative "src/argument_parser"
 require_relative "src/mongodb_config_source"
-require_relative "src/daemon"
 require_relative "src/config_writer_builder"
+require_relative "src/solr_config_const"
 
 if $0 == __FILE__ then
-  CONFIG_COLL_NAME = "mongo_solr"
+  include MongoSolr
 
-  options = MongoSolr::ArgumentParser.parse_options(ARGV)
+  options = ArgumentParser.parse_options(ARGV)
   mongo = Mongo::Connection.new(options.mongo_loc, options.mongo_port)
-  MongoSolr::Util.authenticate_to_db(mongo, options.auth)
+  Util.authenticate_to_db(mongo, options.auth)
 
   logger = Logger.new(STDOUT)
 
-  config_db_name = MongoSolr::MongoDBConfigSource.get_config_db_name(mongo)
-  config_coll = mongo.db(config_db_name).collection(CONFIG_COLL_NAME)
-  config_reader = MongoSolr::MongoDBConfigSource.new(config_coll, logger)
-  config_writer_builder = MongoSolr::ConfigWriterBuilder.new(config_coll, logger)
+  config_db_name = MongoDBConfigSource.get_config_db_name(mongo)
+  config_coll = mongo.db(config_db_name).collection(SolrConfigConst::CONFIG_COLLECTION_NAME)
+  config_reader = MongoDBConfigSource.new(config_coll, logger)
+  config_writer_builder = ConfigWriterBuilder.new(config_coll, logger)
 
   daemon_opt = {
     :mode => options.mode,
@@ -31,6 +32,6 @@ if $0 == __FILE__ then
     :logger => logger
   }
 
-  MongoSolr::Daemon.run(mongo, config_reader, config_writer_builder, daemon_opt)
+  Daemon.run(mongo, config_reader, config_writer_builder, daemon_opt)
 end
 
