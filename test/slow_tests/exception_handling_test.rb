@@ -1,6 +1,6 @@
 # Tests for handling exceptions with Mongo instance failure.
 
-require_relative "../test_helper"
+require File.expand_path("../../test_helper", __FILE__)
 require "#{PROJ_SRC_PATH}/solr_synchronizer"
 require "fileutils"
 
@@ -54,7 +54,7 @@ class ExceptionHandlingTest < Test::Unit::TestCase
     end
 
     should "succesfully dump db contents after failure" do
-      @test_coll1.insert({foo: "bar"})
+      @test_coll1.insert({ :foo => "bar"})
       @test_coll1.db.get_last_error
       @mongo.stop
 
@@ -82,7 +82,7 @@ class ExceptionHandlingTest < Test::Unit::TestCase
           @solr.expects(:add).once
           @solr.expects(:commit).at_least(1)
           
-          retry_until_ok { @test_coll1.insert({x: 1}) }
+          retry_until_ok { @test_coll1.insert({ :x => 1 }) }
         elsif mode == :sync and count >= 1 then
           break
         else
@@ -94,7 +94,7 @@ class ExceptionHandlingTest < Test::Unit::TestCase
     should "continue dumping after being disconnected" do
       @solr_sync.update_db_set({})
 
-      @test_coll1.insert({x: 1})
+      @test_coll1.insert({ :x => 1 })
       @test_coll1.db.get_last_error
 
       @solr.stubs(:add)
