@@ -67,6 +67,14 @@ module MongoSolr
         end
       end
     end
+
+    # @param exception [Exception] the exception
+    #
+    # @return [String] the message which contains the description with the complete
+    #   stack trace.
+    def self.get_full_exception_msg(exception)
+      return exception.message + exception.backtrace.join("\n")
+    end
   end
 end
 

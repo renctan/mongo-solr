@@ -185,7 +185,7 @@ module MongoSolr
             raise "Sync cursor is too stale: Cannot catch up with the update rate." + 
               "Please perform a manual dump."
           rescue => e
-            @logger.error "#{@name}: #{e.message}"
+            @logger.error "#{@name}: #{Util.get_full_exception_msg(e)}"
             cursor_exception_occured = true
             yield :excep, doc_count if block_given?
             break
@@ -571,7 +571,7 @@ module MongoSolr
       begin
         yield block
       rescue => e
-        @logger.error "#{@name}: #{e.message}"
+        @logger.error "#{@name}: #{Util.get_full_exception_msg(e)}"
         sleep @err_retry_interval
         retry
       end

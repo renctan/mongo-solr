@@ -1,4 +1,5 @@
 require_relative "solr_config_const"
+require_relative "util"
 
 module MongoSolr
   # A simple class for writing updates to the configuration database.
@@ -27,7 +28,7 @@ module MongoSolr
                          TS_UPDATE_KEY => new_timestamp
                        }})
       rescue => e
-        @logger.error e.mesage unless @logger.nil?
+        @logger.error Util.get_full_exception_msg(e) unless @logger.nil?
       end
     end
 
@@ -39,7 +40,7 @@ module MongoSolr
         @coll.update({ SolrConfigConst::SOLR_URL_KEY => @solr_loc },
                      { "$set" => { SolrConfigConst::TIMESTAMP_KEY => timestamp }})
       rescue => e
-        @logger.error e.mesage unless @logger.nil?
+        @logger.error Util.get_full_exception_msg(e) unless @logger.nil?
       end
     end
 

@@ -1,3 +1,5 @@
+require_relative "util"
+
 module MongoSolr
   # A simple decorator class that will catch exceptions on selected RSolr::Client methods
   # and retry again at a later time.
@@ -25,7 +27,7 @@ module MongoSolr
           begin
             @solr.send(name, *args)
           rescue => e
-            @logger.error e.message unless @logger.nil?
+            @logger.error Util.get_full_exception_msg(e) unless @logger.nil?
             sleep @interval
             retry
           end

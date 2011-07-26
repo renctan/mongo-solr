@@ -1,6 +1,7 @@
 require_relative "solr_config_const"
 require_relative "config_source"
 require_relative "config_format_reader"
+require_relative "util"
 
 module MongoSolr
   # A simple class that represents the source of config data coming from a MongoDB instance
@@ -21,7 +22,7 @@ module MongoSolr
           begin
             doc = cursor.next_document          
           rescue => e
-            @logger.error e.message unless @logger.nil?
+            @logger.error Util.get_full_exception_msg(e) unless @logger.nil?
             return self
           end
 
