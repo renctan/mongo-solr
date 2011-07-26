@@ -4,23 +4,31 @@ A simple Ruby script for indexing the entire contents of a MongoDB instance (exc
 
 Please check out the wiki for more details about this project.
 
+# Ruby version
+
+The scripts can run on both v1.8.7 and 1.9.x, but it is not yet fully tested on v1.8.7, so it is recommended to use 1.9.
+
 # Usage
 
 Simply run the mongo_solr.rb on the root directory. For more details on the configurable options, run the script with the -h option:
 
-  ruby mongo_solr.rb -h
+    ruby mongo_solr.rb -h
 
 # External Gem Dependencies:
 
 Run the following command to install all the gem dependencies used by this project:
 
-  bundle install
+    bundle install
+
+Note: You can get bundle from [here](http://gembundler.com/).
 
 # Running the test:
 
-The tests are located at the test/unit and test/integration respectively.
+    rake test:all
 
-## Integration Test Assumptions
+Make sure you have at least Ruby v1.9.x to run the tests.
+
+## Integration and JS Test Assumptions
 
 The integration test uses the following assumptions:
 

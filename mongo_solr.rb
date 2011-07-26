@@ -4,6 +4,18 @@
 # Solr and continiously updates it with changes on the database. Run the script with
 # --help for more details on possible options.
 
+if $0 == __FILE__ then
+  # Copy and pasted from:
+  # http://stackoverflow.com/questions/4333286/ruby-require-vs-require-relative-best-practice-to-workaround-running-in-both-r/4718414#4718414
+  unless Kernel.respond_to?(:require_relative)
+    module Kernel
+      def require_relative(path)
+        require File.join(File.dirname(caller[0]), path.to_str)
+      end
+    end
+  end
+end
+
 require_relative "src/util"
 require_relative "src/daemon"
 require_relative "src/argument_parser"

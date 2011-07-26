@@ -93,7 +93,7 @@ module MongoSolr
       # 1. @is_synching->@db_set->add_collection_wo_lock()
 
       @synching_mutex.synchronize do
-        @db_set.use do |db_set|
+        @db_set.use do |db_set, mutex|
           new_db_set.each do |db_name, collection|
             add_collection_wo_lock(db_set, @is_synching, db_name, collection, wait)
           end
@@ -116,7 +116,7 @@ module MongoSolr
       # 1. @is_synching->@db_set->add_collection_wo_lock()      
 
       @synching_mutex.synchronize do
-        @db_set.use do |db_set|
+        @db_set.use do |db_set, mutex|
           add_collection_wo_lock(db_set, @is_synching, db_name, collection, wait, &block)
         end
       end
@@ -245,7 +245,7 @@ module MongoSolr
     #   collection names.
     def get_db_set_snapshot
       # Lock usage: @db_set
-      return @db_set.use { |db_set| db_set.clone }
+      return @db_set.use { |db_set, mutex| db_set.clone }
     end
 
     alias_method :db_set, :get_db_set_snapshot
@@ -507,7 +507,7 @@ module MongoSolr
       ns = oplog_entry["ns"]
       inserted = false
 
-      @oplog_backlog.use do |backlog|
+      @oplog_backlog.use do |backlog, mutex|
         if backlog.has_key? ns then
           backlog[ns] << oplog_entry
           inserted = true
