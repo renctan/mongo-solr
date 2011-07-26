@@ -48,7 +48,6 @@ module MongoSolr
       @update_interval = opt[:interval] || 0
       @err_retry_interval = opt[:err_retry_interval] || 1
       @config_writer = config_writer
-      @last_update = nil
 
       @solr = SolrRetryDecorator.new(solr, @err_retry_interval, @logger)
 
@@ -168,6 +167,7 @@ module MongoSolr
       wait = opt[:wait] || false
 
       cursor = init_sync(checkpoint_data, wait)
+      last_timestamp = (checkpoint_data.nil? ? nil : checkpoint_data.commit_ts)
 
       yield :finished_dumping, 0 if block_given?
 
@@ -182,7 +182,7 @@ module MongoSolr
           begin
             doc = cursor.next_document
           rescue Mongo::OperationFailure
-            raise "Sync cursor is too state: Cannot catch up with the update rate." + 
+            raise "Sync cursor is too stale: Cannot catch up with the update rate." + 
               "Please perform a manual dump."
           rescue => e
             @logger.error "#{@name}: #{e.message}"
@@ -203,7 +203,7 @@ module MongoSolr
               doc_count += 1
             end
 
-            @last_update = doc["ts"]
+            last_timestamp = doc["ts"]
           end
 
           return if stop_synching?
@@ -219,9 +219,17 @@ module MongoSolr
         # Setting of cursor was deferred until here to do work with Solr while
         # waiting for connection to Mongo to recover.
         if cursor_exception_occured then
-          cursor = retry_until_ok { get_last_update_cursor }
+          if last_timestamp.nil? then
+            cursor = retry_until_ok do
+              timestamp = get_last_oplog_timestamp
+              get_oplog_cursor(timestamp)
+            end
+          else
+            cursor = retry_until_ok { get_oplog_cursor_w_check(last_timestamp) }
+          end
 
           if cursor.nil? then
+            raise "Too stale!"
             # TODO: Too stale. Raise?
             # cursor = retry_until_ok { get_oplog_cursor(get_last_oplog_timestamp) }
             # dump_db_contents(db_set_snapshot)
@@ -368,11 +376,7 @@ module MongoSolr
       end
 
       @solr.commit
-
-      if do_timestamp_commit then
-        @config_writer.update_commit_timestamp(timestamp) 
-        @last_update = timestamp
-      end
+      @config_writer.update_commit_timestamp(timestamp) if do_timestamp_commit
     end
 
     # Helper method for determining whether to apply the oplog entry changes to Solr.
@@ -573,19 +577,24 @@ module MongoSolr
       end
     end
 
+    # Acquires a cursor to the oplog entry with time greater than or equal to the given
+    # timestamp.
+    #
+    # @param timestamp [BSON::Timestamp] The reference timestamp.
+    #
     # @return [Mongo::Cursor] the cursor that points to the next oplog entry to the last
     #   update. nil if the last known update timestamp is too old.
-    def get_last_update_cursor
+    def get_oplog_cursor_w_check(timestamp)
       ret = nil
 
-      unless @last_update.nil? then
-        cursor = get_oplog_cursor(@last_update)
+      unless timestamp.nil? then
+        cursor = get_oplog_cursor(timestamp)
         doc = cursor.next_document
 
-        if @last_update == doc["ts"] then
+        if timestamp == doc["ts"] then
           ret = cursor
         else
-          @logger.warn("#{@name}: Last update (#{@last_update.inspect}) is too old. " +
+          @logger.warn("#{@name}: Last update (#{timestamp.inspect}) is too old. " +
                        "Oldest oplog ts: #{doc["ts"].inspect}")
         end
       end
@@ -693,18 +702,17 @@ module MongoSolr
     #   entry to process.
     def init_sync(checkpoint_data, wait)
       cursor = nil
+      last_commit = nil
 
       unless checkpoint_data.nil? then
         restore_from_checkpoint(checkpoint_data, wait)
-        @last_update = checkpoint_data.commit_ts
-        cursor = retry_until_ok { get_last_update_cursor }
-        perform_full_dump if cursor.nil?
+        last_commit = checkpoint_data.commit_ts
       end
 
-      if @last_update.nil? then
+      if last_commit.nil? then
         cursor = perform_full_dump
       else
-        cursor = retry_until_ok { get_last_update_cursor }
+        cursor = retry_until_ok { get_oplog_cursor_w_check(last_commit) }
         perform_full_dump if cursor.nil?
       end
 
@@ -718,8 +726,8 @@ module MongoSolr
     # @return [Mongo::Cursor] the oplog cursor
     def perform_full_dump
       cursor = retry_until_ok do
-        @last_update = get_last_oplog_timestamp
-        get_last_update_cursor
+        timestamp = get_last_oplog_timestamp
+        get_oplog_cursor(timestamp)
       end
 
       db_set_snapshot = get_db_set_snapshot
