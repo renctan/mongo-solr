@@ -8,12 +8,16 @@ module MongoSolr
     # [String] the location of the Solr Server
     attr_reader :solr_loc
 
-    # @param config_data [Hash] A single entry of config data for a Solr Server extracted
+    # @param config_data [Array<Hash>|Hash] The config data for the Solr Server (extracted
     #   from the config DB.
     def initialize(config_data)
-      @config_data = config_data
+      unless config_data.is_a? Array then
+        @config_data = [config_data]
+      else
+        @config_data = config_data
+      end
 
-      @solr_loc = @config_data[SolrConfigConst::SOLR_URL_KEY]
+      @solr_loc = @config_data.first[SolrConfigConst::SOLR_URL_KEY]
     end
 
     # Converts the config data object to a format recognized by
@@ -23,7 +27,7 @@ module MongoSolr
     def get_db_set
       db_set = {}
 
-      @config_data[SolrConfigConst::LIST_KEY].each do |ns_entry|
+      @config_data.each do |ns_entry|
         namespace = ns_entry[SolrConfigConst::NS_KEY]
         split = namespace.split(".")
         db_name = split.first
@@ -44,13 +48,17 @@ module MongoSolr
     # @return [MongoSolr::CheckpointData] the checkpoint data extracted from the
     #   configuration document.
     def get_checkpoint_data
-      data = CheckpointData.new(@config_data[SolrConfigConst::TIMESTAMP_KEY])
+      data = nil
 
-      @config_data[SolrConfigConst::LIST_KEY].each do |ns_entry|
-        namespace = ns_entry[SolrConfigConst::NS_KEY]
-        timestamp = ns_entry[SolrConfigConst::TIMESTAMP_KEY]
+      unless @config_data.empty? then
+        data = CheckpointData.new(@config_data.first[SolrConfigConst::COMMIT_TIMESTAMP_KEY])
 
-        data.set(namespace, timestamp)
+        @config_data.each do |ns_entry|
+          namespace = ns_entry[SolrConfigConst::NS_KEY]
+          timestamp = ns_entry[SolrConfigConst::UPDATE_TIMESTAMP_KEY]
+
+          data.set(namespace, timestamp)
+        end
       end
 
       return data

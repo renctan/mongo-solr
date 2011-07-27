@@ -10,8 +10,8 @@ def all_config_table
   url_key = MongoSolr::SolrConfigConst::SOLR_URL_KEY
 
   {
-    ConfigDBFixture::CONFIG2[url_key] => ConfigDBFixture::CONFIG2,
-    ConfigDBFixture::CONFIG3[url_key] => ConfigDBFixture::CONFIG3
+    ConfigDBFixture::SOLR_LOC_2 => ConfigDBFixture::CONFIG2,
+    ConfigDBFixture::SOLR_LOC_3 => ConfigDBFixture::CONFIG3
   }
 end
 
@@ -31,7 +31,7 @@ class MongoDBConfigSourceTest < Test::Unit::TestCase
   context "basic test" do
     setup do
       @test_coll1 = DB_CONNECTION.db(TEST_DB).create_collection("test1")
-      all_config.each { |doc| @test_coll1.insert(doc) }
+      @test_coll1.insert(all_config)
     end
 
     teardown do
@@ -47,20 +47,30 @@ class MongoDBConfigSourceTest < Test::Unit::TestCase
 
       solr_servers = solr_set.keys
 
-      config.each do |doc|
-        count += 1
-        server_name = doc[MongoSolr::SolrConfigConst::SOLR_URL_KEY]
+      config.each do |docs|
+        server_name = ""
+        fixture_docs_ns = []
 
-        assert(solr_servers.include?(server_name))
-        solr_servers.delete server_name
+        docs.each_index do |idx|
+          count += 1
+          doc = docs[idx]
 
-        ns_list = solr_set[server_name][MongoSolr::SolrConfigConst::LIST_KEY]
-        fixture_docs_ns = ns_list.map do |ns_entry|
-          ns_entry[MongoSolr::SolrConfigConst::NS_KEY]
-        end
+          if idx == 0 then
+            server_name = doc[MongoSolr::SolrConfigConst::SOLR_URL_KEY]
+            assert(solr_servers.include?(server_name), "#{server_name} is not in the list!")
+            solr_servers.delete server_name
 
-        doc[MongoSolr::SolrConfigConst::LIST_KEY].each do |ns_entry|
-          assert(fixture_docs_ns.include?(ns_entry[MongoSolr::SolrConfigConst::NS_KEY]))
+            ns_list = solr_set[server_name]
+
+            fixture_docs_ns = ns_list.map do |ns_entry|
+              ns_entry[MongoSolr::SolrConfigConst::NS_KEY]
+            end
+          else
+            assert_equal(server_name, doc[MongoSolr::SolrConfigConst::SOLR_URL_KEY])
+          end
+
+          ns = doc[MongoSolr::SolrConfigConst::NS_KEY]
+          assert(fixture_docs_ns.include?(ns), "#{ns} does not exists in #{server_name}!")
         end
       end
 

@@ -22,10 +22,10 @@ module MongoSolr
     def update_timestamp(namespace, new_timestamp)
       begin
         @coll.update({ SolrConfigConst::SOLR_URL_KEY => @solr_loc,
-                       NS_CRIT_KEY => namespace
+                       SolrConfigConst::NS_KEY => namespace
                      },
                      { "$set" => {
-                         TS_UPDATE_KEY => new_timestamp
+                         SolrConfigConst::UPDATE_TIMESTAMP_KEY => new_timestamp
                        }})
       rescue => e
         @logger.error Util.get_full_exception_msg(e) unless @logger.nil?
@@ -38,15 +38,11 @@ module MongoSolr
     def update_commit_timestamp(timestamp)
       begin
         @coll.update({ SolrConfigConst::SOLR_URL_KEY => @solr_loc },
-                     { "$set" => { SolrConfigConst::TIMESTAMP_KEY => timestamp }})
+                     { "$set" => { SolrConfigConst::COMMIT_TIMESTAMP_KEY => timestamp }})
       rescue => e
         @logger.error Util.get_full_exception_msg(e) unless @logger.nil?
       end
     end
-
-    private
-    NS_CRIT_KEY = "#{SolrConfigConst::LIST_KEY}.#{SolrConfigConst::NS_KEY}"
-    TS_UPDATE_KEY = "#{SolrConfigConst::LIST_KEY}.$.#{SolrConfigConst::TIMESTAMP_KEY}"
   end
 end
 

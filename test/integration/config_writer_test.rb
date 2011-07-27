@@ -7,16 +7,14 @@ class ConfigWriterTest < Test::Unit::TestCase
   DB_PORT = 27017
   DB_CONNECTION = Mongo::Connection.new(DB_LOC, DB_PORT)
   TEST_DB = "ConfigWriterTestIntegrationTestDB"
-  SAMPLE_DOC = ConfigDBFixture::CONFIG2
+  SAMPLE_DOCS = ConfigDBFixture::CONFIG2
+  SOLR_LOC = ConfigDBFixture::SOLR_LOC_2
 
   context "basic test" do
     setup do
       @config_coll = DB_CONNECTION.db(TEST_DB).create_collection("config")
-      @config_coll.insert(SAMPLE_DOC)
-
-      url_key = MongoSolr::SolrConfigConst::SOLR_URL_KEY
-      @config_writer = MongoSolr::ConfigWriter.new(SAMPLE_DOC[url_key],
-                                                   @config_coll)
+      @config_coll.insert(SAMPLE_DOCS)
+      @config_writer = MongoSolr::ConfigWriter.new(SOLR_LOC, @config_coll)
     end
 
     teardown do
@@ -24,20 +22,14 @@ class ConfigWriterTest < Test::Unit::TestCase
     end
 
     should "correctly update timestamp for existing entry" do
-      ns = SAMPLE_DOC[MongoSolr::SolrConfigConst::LIST_KEY].
-        first[MongoSolr::SolrConfigConst::NS_KEY]
+      ns = SAMPLE_DOCS.first[MongoSolr::SolrConfigConst::NS_KEY]
 
-      timestamp = BSON::Timestamp.new(1000, 10)
+      timestamp = BSON::Timestamp.new(7777, 10)
       @config_writer.update_timestamp(ns, timestamp)
       @config_coll.db.get_last_error # wait till the update gets reflected
 
-      config_doc = @config_coll.find_one
-      result = config_doc[MongoSolr::SolrConfigConst::LIST_KEY].reject do |entry|
-        entry[MongoSolr::SolrConfigConst::NS_KEY] != ns
-      end
-
-      result_ts = result.first[MongoSolr::SolrConfigConst::TIMESTAMP_KEY]
-      assert_equal(timestamp, result_ts)
+      config_doc = @config_coll.find_one({ MongoSolr::SolrConfigConst::NS_KEY => ns })
+      assert_equal(timestamp, config_doc[MongoSolr::SolrConfigConst::UPDATE_TIMESTAMP_KEY])
     end
 
     should "not create a new entry if namespace does not exists" do
@@ -47,12 +39,8 @@ class ConfigWriterTest < Test::Unit::TestCase
       @config_writer.update_timestamp(ns, timestamp)
       @config_coll.db.get_last_error # wait till the update gets reflected
 
-      config_doc = @config_coll.find_one
-      result = config_doc[MongoSolr::SolrConfigConst::LIST_KEY].reject do |entry|
-        entry[MongoSolr::SolrConfigConst::NS_KEY] != ns
-      end
-
-      assert(result.empty?)
+      config_doc = @config_coll.find_one({ MongoSolr::SolrConfigConst::NS_KEY => ns })
+      assert(config_doc.nil?)
     end
 
     should "correctly update commit timestamp" do
@@ -61,7 +49,7 @@ class ConfigWriterTest < Test::Unit::TestCase
       @config_coll.db.get_last_error # wait till the update gets reflected
 
       config_doc = @config_coll.find_one
-      result = config_doc[MongoSolr::SolrConfigConst::TIMESTAMP_KEY]
+      result = config_doc[MongoSolr::SolrConfigConst::COMMIT_TIMESTAMP_KEY]
       assert_equal(timestamp, result)
     end
   end

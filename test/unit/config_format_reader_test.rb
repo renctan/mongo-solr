@@ -13,7 +13,7 @@ class ConfigFormatReaderTest < Test::Unit::TestCase
     end
 
     should "extract solr location correctly" do
-      assert_equal(CONFIG_DATA[SolrConfigConst::SOLR_URL_KEY], @reader.solr_loc)
+      assert_equal(CONFIG_DATA.first[SolrConfigConst::SOLR_URL_KEY], @reader.solr_loc)
     end
 
     should "extract db_set correctly" do
@@ -35,23 +35,22 @@ class ConfigFormatReaderTest < Test::Unit::TestCase
     should "extract checkpoint data correctly" do
       data = @reader.get_checkpoint_data
 
-      assert_equal(CONFIG_DATA[SolrConfigConst::TIMESTAMP_KEY],
+      assert_equal(CONFIG_DATA.first[SolrConfigConst::COMMIT_TIMESTAMP_KEY],
                    data.commit_ts)
 
       count = 0
-      config_docs = CONFIG_DATA[SolrConfigConst::LIST_KEY]
       data.each do |ns, ts|
         count += 1
 
-        index = config_docs.index do |x|
+        index = CONFIG_DATA.index do |x|
           x[SolrConfigConst::NS_KEY] == ns and
-            x[SolrConfigConst::TIMESTAMP_KEY] == ts
+            x[SolrConfigConst::UPDATE_TIMESTAMP_KEY] == ts
         end
 
         assert_not_equal(nil, index, "#{ns}@#{ts} not found.")
       end
 
-      assert_equal(config_docs.size, count)
+      assert_equal(CONFIG_DATA.size, count)
     end
   end
 end

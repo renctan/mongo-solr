@@ -1,6 +1,5 @@
 require_relative "solr_config_const"
 require_relative "config_source"
-require_relative "config_format_reader"
 require_relative "util"
 
 module MongoSolr
@@ -16,18 +15,32 @@ module MongoSolr
     # @inheritDoc
     def each(&block)
       if block_given? then
-        cursor = @coll.find
+        cursor = @coll.find({}, { :sort => [ SolrConfigConst::SOLR_URL_KEY, :asc ] })
+        config_data = []
+        current_server = ""
 
-        loop do
-          begin
-            doc = cursor.next_document          
-          rescue => e
-            @logger.error Util.get_full_exception_msg(e) unless @logger.nil?
-            return self
+        doc = cursor.next_document
+
+        unless doc.nil? then
+          current_server = doc[SolrConfigConst::SOLR_URL_KEY]
+          config_data << doc
+        end
+
+        while doc = cursor.next_document do
+          new_server = doc[SolrConfigConst::SOLR_URL_KEY]
+
+          if new_server != current_server then
+            yield config_data
+
+            config_data.clear
+            current_server = new_server
           end
 
-          break if doc.nil?
-          yield doc
+          config_data << doc
+        end
+
+        unless config_data.empty? then
+          yield config_data
         end
       end
 

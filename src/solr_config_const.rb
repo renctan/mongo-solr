@@ -3,9 +3,9 @@ module MongoSolr
   class SolrConfigConst
     CONFIG_COLLECTION_NAME = "msolr"
     SOLR_URL_KEY = "url"
-    LIST_KEY = "l"
     NS_KEY = "ns"
-    TIMESTAMP_KEY = "ts"
+    COMMIT_TIMESTAMP_KEY = "commit_ts"
+    UPDATE_TIMESTAMP_KEY = "update_ts"
     COLL_FIELD_KEY = "f"
   end
 end
