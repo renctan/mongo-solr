@@ -28,9 +28,11 @@ module MongoSolr
     #   to stdout.
     # @option opt [String] :name ("") A string label that will be prefixed to all log outputs.
     # @option opt [number] :interval (0) The interval in seconds to wait before checking for
-    #    new updates in the database
+    #   new updates in the database
     # @option opt [number] :err_retry_interval (1) The interval in seconds to retry again
-    #    after encountering an error in the Solr server or MongoDB instance.
+    #   after encountering an error in the Solr server or MongoDB instance.
+    # @option opt [Boolean] :auto_dump (false) If true, performs a full db dump when the
+    #   oplog cursor gets too stale, otherwise, throws an exception.
     #
     # Note: This object assumes that the solr and mongo_connection params are valid. As a
     #   a consequence, it will keep on retrying whenever an exception on these objects
@@ -47,6 +49,7 @@ module MongoSolr
       @name = opt[:name] || ""
       @update_interval = opt[:interval] || 0
       @err_retry_interval = opt[:err_retry_interval] || 1
+      @auto_dump = opt[:auto_dump] || false
       @config_writer = config_writer
 
       @solr = SolrRetryDecorator.new(solr, @err_retry_interval, @logger)
@@ -179,8 +182,11 @@ module MongoSolr
           begin
             doc = cursor.next_document
           rescue Mongo::OperationFailure
-            raise "Sync cursor is too stale: Cannot catch up with the update rate." + 
-              "Please perform a manual dump."
+            if @auto_dump then
+              cursor = perform_full_dump
+            else
+              raise StaleCursorException, STALE_CURSOR_MSG
+            end
           rescue => e
             @logger.error "#{@name}: #{Util.get_full_exception_msg(e)}"
             cursor_exception_occured = true
@@ -226,10 +232,11 @@ module MongoSolr
           end
 
           if cursor.nil? then
-            raise "Too stale!"
-            # TODO: Too stale. Raise?
-            # cursor = retry_until_ok { get_oplog_cursor(get_last_oplog_timestamp) }
-            # dump_db_contents(db_set_snapshot)
+            if @auto_dump then
+              cursor = perform_full_dump
+            else
+              raise StaleCursorException, STALE_CURSOR_MSG
+            end
           end
         end
       end
@@ -256,6 +263,8 @@ module MongoSolr
       "you are connected to a server running on master/slave or replica set configuration."
     OPLOG_AMBIGUOUS_MSG = "Cannot determine which oplog to use. Please specify " +
       "the appropriate mode."
+    STALE_CURSOR_MSG = "Sync cursor is too stale: Cannot catch up with the update rate. " + 
+      "Please perform a manual dump."
     OPLOG_BATCH_SIZE = 200
 
     # Dumps the contents of the MongoDB server to be indexed to Solr.
@@ -291,7 +300,7 @@ module MongoSolr
     # @param db [Mongo::Database] The database of the collection.
     # @param collection_name [String] The name of the collection.
     # @param timestamp [BSON::Timestamp] (nil) the timestamp to use when updating the update
-    #   timestamp
+    #   timestamp. Nil timestamps will be ignored.
     def dump_collection(db, collection_name, timestamp = nil)
       namespace = "#{db.name}.#{collection_name}"
       @logger.info "#{@name}: dumping #{namespace}..."
@@ -595,11 +604,10 @@ module MongoSolr
         cursor = get_oplog_cursor(timestamp)
         doc = cursor.next_document
 
-        if timestamp == doc["ts"] then
+        if not doc.nil? and timestamp == doc["ts"] then
           ret = cursor
         else
-          @logger.warn("#{@name}: Last update (#{timestamp.inspect}) is too old. " +
-                       "Oldest oplog ts: #{doc["ts"].inspect}")
+          @logger.warn("#{@name}: (#{timestamp.inspect}) is too old and not in the oplog")
         end
       end
 

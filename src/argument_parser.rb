@@ -19,6 +19,7 @@ module MongoSolr
       options.interval = 1
       options.config_interval = 1
       options.err_interval = 10
+      options.auto_dump = false
       options.auth = {}
 
       opt_parser = OptionParser.new do |opts|
@@ -76,6 +77,14 @@ module MongoSolr
                 "Does not need to be an integer,",
                 "but must be >= 1. Defaults to #{options.config_interval}.") do |seconds|
           options.config_interval = seconds
+        end
+
+        opts.separator ""
+        opts.on("-a", "--auto_dump", "Automatically performs a full DB",
+                "dump when the oplog cursor gets too stale.",
+                "The default behavior without this option",
+                "is to raise an exception and terminate.") do
+          options.auto_dump = true
         end
 
 #        opts.separator ""

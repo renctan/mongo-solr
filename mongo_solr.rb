@@ -41,6 +41,7 @@ if $0 == __FILE__ then
     :mode => options.mode,
     :config_poll_interval => options.config_interval,
     :err_retry_interval => options.err_interval,
+    :auto_dump => options.auto_dump,
     :interval => options.interval,
     :logger => logger
   }

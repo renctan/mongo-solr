@@ -55,11 +55,11 @@ module MongoSolr
     #   to STDOUT.
     # @option opt [number] :config_poll_interval (1) Number of seconds before checking for
     #   any changes in the configuration
-    # @option opt [number] :interval (0) The interval in seconds to wait before checking for
-    #    new updates in the database
     # @option opt [number] :err_retry_interval (10) The interval in seconds to retry again
     #    after encountering an error in the Solr server or MongoDB instance.
-    def self.run(mongo, config_source, config_writer_builder, mode, opt = {})
+    #
+    # @see MongoSolr::SolrSynchronizer#new for more recognized values for the opt parameter.
+    def self.run(mongo, config_source, config_writer_builder, opt = {})
       config_poll_interval = opt[:config_poll_interval] || 1
       err_retry_interval = opt[:err_retry_interval] || 10
       logger = opt[:logger] || Logger.new(STDOUT)
@@ -103,6 +103,8 @@ module MongoSolr
 
           solr_sync_set = new_solr_sync_set
           sleep config_poll_interval # Check the config settings again later
+        rescue StaleCursorException
+          raise
         rescue => e
           logger.error Util.get_full_exception_msg(e)
           sleep err_retry_interval
