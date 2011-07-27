@@ -18,6 +18,7 @@ module MongoSolr
       options.mode = :auto
       options.interval = 1
       options.config_interval = 1
+      options.err_interval = 10
       options.auth = {}
 
       opt_parser = OptionParser.new do |opts|
@@ -57,6 +58,15 @@ module MongoSolr
                 "Does not need to be an integer,",
                 "but must be >= 1. Defaults to #{options.interval}.") do |seconds|
           options.interval = seconds
+        end
+
+        opts.separator ""
+        opts.on("-e", "--err_interval SECONDS", Float,
+                "The number of seconds to wait before",
+                "retrying again when an error occured.",
+                "Does not need to be an integer,",
+                "but must be >= 1. Defaults to #{options.err_interval}.") do |seconds|
+          options.err_interval = seconds
         end
 
         opts.separator ""

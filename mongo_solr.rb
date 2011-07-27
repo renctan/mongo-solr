@@ -40,6 +40,7 @@ if $0 == __FILE__ then
   daemon_opt = {
     :mode => options.mode,
     :config_poll_interval => options.config_interval,
+    :err_retry_interval => options.err_interval,
     :interval => options.interval,
     :logger => logger
   }
