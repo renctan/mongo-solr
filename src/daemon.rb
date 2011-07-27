@@ -67,40 +67,45 @@ module MongoSolr
       loop do
         new_solr_sync_set = {}
 
-        config_source.each do |config_data|
-          solr_config = ConfigFormatReader.new(config_data)
+        begin
+          config_source.each do |config_data|
+            solr_config = ConfigFormatReader.new(config_data)
 
-          url = solr_config.solr_loc
-          new_db_set = solr_config.get_db_set
+            url = solr_config.solr_loc
+            new_db_set = solr_config.get_db_set
 
-          if solr_sync_set.has_key? url then
-            solr_sync = solr_sync_set[url]
-            solr_sync.update_db_set(new_db_set)
-            solr_sync_set.delete url
-          elsif Util.url_ok?(url, logger) then
-            solr = RSolr.connect(:url => url)
-            config_writer = config_writer_builder.create_writer(url)
+            if solr_sync_set.has_key? url then
+              solr_sync = solr_sync_set[url]
+              solr_sync.update_db_set(new_db_set)
+              solr_sync_set.delete url
+            elsif Util.url_ok?(url, logger) then
+              solr = RSolr.connect(:url => url)
+              config_writer = config_writer_builder.create_writer(url)
 
-            opt[:db_set] = new_db_set
+              opt[:db_set] = new_db_set
 
-            solr_sync =
-              SolrSyncThread.new(SolrSynchronizer.new(solr, mongo, config_writer, opt),
-                                 solr_config.get_checkpoint_data)
-            solr_sync.start
-          else
-            solr_sync = nil
+              solr_sync =
+                SolrSyncThread.new(SolrSynchronizer.new(solr, mongo, config_writer, opt),
+                                   solr_config.get_checkpoint_data)
+              solr_sync.start
+            else
+              solr_sync = nil
+            end
+
+            new_solr_sync_set[url] = solr_sync unless solr_sync.nil?
           end
 
-          new_solr_sync_set[url] = solr_sync unless solr_sync.nil?
+          # Terminate all currently running threads who are not in the new config
+          solr_sync_set.each do |url, solr_thread|
+            solr_thread.stop
+          end
+
+          solr_sync_set = new_solr_sync_set
+        rescue => e
+          logger.error Util.get_full_exception_msg(e)
         end
 
-        # Terminate all currently running threads who are not in the new config
-        solr_sync_set.each do |url, solr_thread|
-          solr_thread.stop
-        end
-
-        solr_sync_set = new_solr_sync_set
-        sleep config_poll_interval # Check the config settings again after a second
+        sleep config_poll_interval # Check the config settings again later
       end
     end
   end
