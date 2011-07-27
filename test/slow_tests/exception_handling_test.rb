@@ -46,7 +46,6 @@ class ExceptionHandlingTest < Test::Unit::TestCase
       @solr_sync = MongoSolr::SolrSynchronizer.new(@solr, @connection, config_writer,
                                                    { :db_set => basic_db_set,
                                                      :logger => DEFAULT_LOGGER })
-
     end
 
     teardown do
@@ -107,7 +106,7 @@ class ExceptionHandlingTest < Test::Unit::TestCase
           @solr.expects(:add).once
           @solr.expects(:commit).at_least(1)
 
-          @solr_sync.add_collection(TEST_DB, "test1", false) do |add_coll_mode|
+          @solr_sync.add_collection(TEST_DB, "test1", false) do |add_coll_mode, backlog|
             @solr_sync.stop!
             false
           end
