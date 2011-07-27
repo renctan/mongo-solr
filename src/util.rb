@@ -75,6 +75,22 @@ module MongoSolr
     def self.get_full_exception_msg(exception)
       return exception.message + exception.backtrace.join("\n")
     end
+
+    # Gets the database name and collection name from a given namespace
+    #
+    # @param namespace [String] The namespace.
+    #
+    # @return [String, String] the two strings with the first one as the database name
+    #   and the second one as the collection name.
+    def self.get_db_and_coll_from_ns(namespace)
+      split = namespace.split(".")
+      db_name = split.first
+
+      split.delete_at 0
+      collection_name = split.join(".")
+
+      return db_name, collection_name
+    end
   end
 end
 

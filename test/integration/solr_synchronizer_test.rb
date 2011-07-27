@@ -44,7 +44,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       @test_coll3.insert({ "test" => "c" })
 
       @solr.expects(:add).times(3)
-      @solr.expects(:commit).once
+      @solr.expects(:commit).at_least_once
       @solr_sync.sync { break }
     end
 
@@ -122,11 +122,12 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       @test_coll1.insert({ "msg" => "Hello world!" })
 
       @solr.stubs(:add)
+      @solr.stubs(:commit)
       @solr.expects(:delete_by_id).once
-      @solr.expects(:commit).at_least(2) # during and after dump
 
       @solr_sync.sync do |mode, doc_count|
         if mode == :finished_dumping then
+          @solr.expects(:commit).once
           @test_coll1.remove({ "msg" => "Hello world!" })
         elsif mode == :sync then
           break
@@ -194,11 +195,12 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
       context "pre-defined collection set" do
         should "update on collection in the list (single db)" do
+          @solr.stubs(:commit)
           @solr.expects(:add).once
-          @solr.expects(:commit).twice
 
           @solr_sync.sync do |mode, doc_count|
             if mode == :finished_dumping then
+              @solr.expects(:commit).once
               @test_coll1.insert({ "lang" => "Ruby" })
             elsif mode == :sync then
               break
@@ -210,11 +212,13 @@ class SolrSynchronizerTest < Test::Unit::TestCase
           @db_set_coll1[@db2.name] = Set.new([@test_coll3.name])
           @solr_sync.update_db_set(@db_set_coll1)
 
-          @solr.expects(:add).twice
-          @solr.expects(:commit).times(2..3)
+          @solr.stubs(:commit)
 
           @solr_sync.sync do |mode, doc_count|
             if mode == :finished_dumping then
+              @solr.expects(:add).twice
+              @solr.expects(:commit).times(1..2)
+
               @test_coll1.insert({ "lang" => "Ruby" })
               @test_coll3.insert({ "lang" => "Ruby" })
             elsif mode == :sync then
@@ -226,11 +230,13 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         should "update on collection in the list (same db, diff coll)" do
           @db_set_coll1[@db.name].add(@test_coll2.name)
 
-          @solr.expects(:add).twice
-          @solr.expects(:commit).times(2..3)
+          @solr.stubs(:commit)
 
           @solr_sync.sync do |mode, doc_count|
             if mode == :finished_dumping then
+              @solr.expects(:add).twice
+              @solr.expects(:commit).times(1..2)
+
               @test_coll1.insert({ "lang" => "Ruby" })
               @test_coll2.insert({ "auth" => "Matz" })
             elsif mode == :sync then
@@ -439,10 +445,28 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         checkpoint_data.set(@test_coll1_ns, timestamp)
 
         @solr.expects(:add).once
-        @solr.stubs(:commit)
+        @solr.expects(:commit).at_least_once
 
         @solr_sync.sync({ :checkpt => checkpoint_data }) do |mode, count|
           break if mode == :sync
+        end
+      end
+
+      should "dump all if commit timestamp is not available" do
+        @test_coll1.insert({ :x => 1 })
+        @test_coll1.insert({ :z => 5 })
+        @test_coll1.db.get_last_error
+        # hack for getting the last oplog timestamp
+        timestamp = @solr_sync.send :get_last_oplog_timestamp
+
+        checkpoint_data = MongoSolr::CheckpointData.new(nil)
+        checkpoint_data.set(@test_coll1_ns, timestamp)
+
+        @solr.expects(:add).twice
+        @solr.expects(:commit).at_least_once
+
+        @solr_sync.sync({ :checkpt => checkpoint_data }) do |mode, count|
+          break if mode == :finished_dumping
         end
       end
 
@@ -458,9 +482,9 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         checkpoint_data.set(@test_coll1_ns, timestamp)
 
         @solr.expects(:add).times(3)
-        @solr.stubs(:commit)
+        @solr.expects(:commit).at_least_once
 
-        @solr_sync.sync({ :checkpt => checkpoint_data, :wait => true }) do |mode, count|
+        @solr_sync.sync({ :checkpt => checkpoint_data }) do |mode, count|
           break if mode == :finished_dumping
         end
       end
@@ -481,6 +505,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         @solr_sync.sync({ :checkpt => checkpoint_data }) do |mode, count|
           if mode == :finished_dumping then
             @solr.expects(:add).once
+            @solr.expects(:commit).at_least_once
             @test_coll1.insert({ :y => "why?" })
           elsif mode == :sync && count >= 1 then
             break
@@ -503,7 +528,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
         @solr.expects(:add).never
         @solr.expects(:delete_by_id).once
-        @solr.stubs(:commit)
+        @solr.expects(:commit).at_least_once
 
         @solr_sync.sync({ :checkpt => checkpoint_data }) do |mode, count|
           if mode == :finished_dumping then
@@ -525,9 +550,9 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         checkpoint_data.set(@test_coll1_ns, nil)
 
         @solr.expects(:add).times(3)
-        @solr.stubs(:commit)
+        @solr.expects(:commit).at_least_once
 
-        @solr_sync.sync({ :checkpt => checkpoint_data, :wait => true }) do |mode, count|
+        @solr_sync.sync({ :checkpt => checkpoint_data }) do |mode, count|
           break if mode == :finished_dumping
         end
       end

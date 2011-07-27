@@ -128,8 +128,6 @@ module MongoSolr
     #
     # @option opt [MongoSolr::CheckpointData] :checkpt (nil) This will be used to
     #   continue from a previous session if given.
-    # @option opt [Boolean] :wait (false) True means wait for some asynchronous calls to
-    #   actually terminate before proceeding. Useful for testing.
     # @param block [Proc(mode, doc_count)] An optional  procedure that will be called during
     #   certain conditions:
     #
@@ -164,9 +162,8 @@ module MongoSolr
       end
 
       checkpoint_data = opt[:checkpt]
-      wait = opt[:wait] || false
 
-      cursor = init_sync(checkpoint_data, wait)
+      cursor = init_sync(checkpoint_data)
       last_timestamp = (checkpoint_data.nil? ? nil : checkpoint_data.commit_ts)
 
       yield :finished_dumping, 0 if block_given?
@@ -210,7 +207,7 @@ module MongoSolr
           break if doc_count > OPLOG_BATCH_SIZE
         end
 
-        update_solr(doc_batch, true)
+        update_solr(doc_batch, true) unless doc_batch.empty?
 
         yield :sync, doc_count if block_given?
 
@@ -266,23 +263,25 @@ module MongoSolr
     # @param db_set [Hash<String, Array<String> >] a hash which contains the set of
     #   collections to index. The key contains the name of the database while the value
     #   contains an array of collection names.
-    def dump_db_contents(db_set)
+    # @param timestamp [BSON::Timestamp] (nil) the timestamp to use when updating the commit
+    #   timestamp
+    def dump_db_contents(db_set, timestamp = nil)
       db_set.each do |db_name, collections|
         db = @db_connection.db(db_name)
-        collections.each { |coll| dump_collection(db, coll) }
+        collections.each { |coll| dump_collection(db, coll, timestamp) }
       end
-
-      @solr.commit
     end
 
     # Dumps all collections of the database (with the exception of system.* collections) to
     # Solr for indexing without committing.
     #
     # @param db [Mongo::DB] The database instance to dump.
-    def dump_collections(db)
+    # @param timestamp [BSON::Timestamp] (nil) the timestamp to use when updating the update
+    #   timestamp
+    def dump_collections(db, timestamp = nil)
       db.collection_names.each do |collection_name|
         unless collection_name =~ SPECIAL_COLLECTION_NAME_PATTERN then
-          dump_collection(db, collection_name)
+          dump_collection(db, collection_name, timestamp)
         end
       end
     end
@@ -291,16 +290,28 @@ module MongoSolr
     #
     # @param db [Mongo::Database] The database of the collection.
     # @param collection_name [String] The name of the collection.
-    def dump_collection(db, collection_name)
-      @logger.info "#{@name}: dumping #{db.name}.#{collection_name}..."
+    # @param timestamp [BSON::Timestamp] (nil) the timestamp to use when updating the update
+    #   timestamp
+    def dump_collection(db, collection_name, timestamp = nil)
+      namespace = "#{db.name}.#{collection_name}"
+      @logger.info "#{@name}: dumping #{namespace}..."
 
       retry_until_ok do
         db.collection(collection_name).find().each do |doc|
           @solr.add(DocumentTransform.translate_doc(doc))
-          # Do not update commit timestamp since the stream of data from the database
-          # is not guaranteed to be sequential in time.
+          # Do not update commit timestamp here since the stream of data from the
+          # database is not guaranteed to be sequential in time.
         end
       end
+
+      @solr.commit
+
+      unless timestamp.nil?
+        @config_writer.update_timestamp(namespace, timestamp)
+        @config_writer.update_commit_timestamp(timestamp) 
+      end
+
+      @logger.info "#{@name}: Finished dumping #{namespace}"
     end
 
     # Synchronizes the contents of the database to Solr by applying the operations
@@ -354,9 +365,7 @@ module MongoSolr
       end
 
       update_list.each do |namespace, id_list|
-        ns_split = namespace.split(".")
-        database = ns_split.first
-        collection = ns_split[1]
+        database, collection = Util.get_db_and_coll_from_ns(namespace)
 
         retry_until_ok do
           to_update = @db_connection.db(database).collection(collection).
@@ -388,12 +397,7 @@ module MongoSolr
     #
     # @return [Boolean] true if the oplog entry should be skipped.
     def filter_entry?(db_set, namespace)
-      split = namespace.split(".")
-      db_name = split.first
-
-      split.delete_at 0
-      collection_name = split.join(".")
-
+      db_name, collection_name = Util.get_db_and_coll_from_ns(namespace)
       do_skip = true
 
       if db_set.has_key?(db_name) then
@@ -617,7 +621,8 @@ module MongoSolr
       db = retry_until_ok { @db_connection.db(db_name) }
 
       backlog_sync_thread = Thread.start do
-        dump_collection(db, coll_name)
+        timestamp = retry_until_ok { get_last_oplog_timestamp }
+        dump_collection(db, coll_name, timestamp)
         @solr.commit
 
         # For testing/debugging only
@@ -653,11 +658,15 @@ module MongoSolr
     # Sets the state of this object to reflect the state of a given checkpoint.
     #
     # @param checkpoint_data [MongoSolr::CheckpointData] The checkpoint data.
-    # @param wait [Boolean] Waits for the dumps to actually finish before proceeding if
-    #   true. Dumps only happen when the checkpoint is too old/stale.
-    def restore_from_checkpoint(checkpoint_data, wait = false)
-      last_ts = checkpoint_data.commit_ts
-      oplog_coll = get_oplog_collection(@mode)
+    def restore_from_checkpoint(checkpoint_data)
+      commit_ts = checkpoint_data.commit_ts
+
+      if commit_ts.nil? then
+        # Nothing to do here since we need to perform a full dump
+        return
+      end
+
+      oplog_coll = retry_until_ok { get_oplog_collection(@mode) }
       docs_to_update = []
 
       # Make sure that everything before the last commit timestamp is already indexed
@@ -666,26 +675,24 @@ module MongoSolr
       # 1. A newly added collection/field to index was not able to completely consume
       #    its backlog.
       checkpoint_data.each do |ns, ts|
-        split = ns.split(".")
-        db_name = split.first
-
-        split.delete_at 0
-        coll_name = split.join(".")
+        db_name, coll_name  = Util.get_db_and_coll_from_ns(ns)
 
         if ts.nil? then
-          dump_and_sync(db_name, coll_name, wait)
-        elsif Util.compare_bson_ts(ts, last_ts) == -1 then
-          doc_results = oplog_coll.find({ "ns" => ns,
-                                          "ts" => {"$gte" => ts, "$lte" => last_ts} }).to_a
+          dump_and_sync(db_name, coll_name, true)
+        elsif Util.compare_bson_ts(ts, commit_ts) == -1 then
+          doc_results =
+            oplog_coll.find({ "ns" => ns,
+                              "ts" => {"$gte" => ts, "$lte" => commit_ts} }).to_a
+
           if (ts != doc_results.shift["ts"]) then
             # Timestamp is too old that the oplog entry for it is not available anymore
-            dump_and_sync(db_name, coll_name, wait)
+            dump_and_sync(db_name, coll_name, true)
           else
             docs_to_update.concat(doc_results)
           end
         else
           # No new ops since last update on Solr. Advance to the global commit timestamp.
-          @config_writer.update_timestamp(ns, last_ts)
+          @config_writer.update_timestamp(ns, commit_ts)
         end
       end
 
@@ -696,16 +703,15 @@ module MongoSolr
     # database dump when this was called for the first time.
     #
     # @param checkpoint_data [MongoSolr::CheckpointData] @see #sync
-    # @param wait [Boolean] @see #sync
     #
     # @return [Mongo::Cursor] the cursor to the oplog entry, pointing to the next oplog
     #   entry to process.
-    def init_sync(checkpoint_data, wait)
+    def init_sync(checkpoint_data)
       cursor = nil
       last_commit = nil
 
       unless checkpoint_data.nil? then
-        restore_from_checkpoint(checkpoint_data, wait)
+        restore_from_checkpoint(checkpoint_data)
         last_commit = checkpoint_data.commit_ts
       end
 
@@ -725,13 +731,15 @@ module MongoSolr
     #
     # @return [Mongo::Cursor] the oplog cursor
     def perform_full_dump
+      timestamp = nil
+
       cursor = retry_until_ok do
         timestamp = get_last_oplog_timestamp
         get_oplog_cursor(timestamp)
       end
 
       db_set_snapshot = get_db_set_snapshot
-      dump_db_contents(db_set_snapshot)
+      dump_db_contents(db_set_snapshot, timestamp)
 
       return cursor
     end

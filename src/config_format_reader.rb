@@ -1,6 +1,7 @@
 require "set"
 require_relative "solr_config_const"
 require_relative "checkpoint_data"
+require_relative "util"
 
 module MongoSolr
   # A simple helper class for extracting the configuration information for a Solr Server.
@@ -29,11 +30,7 @@ module MongoSolr
 
       @config_data.each do |ns_entry|
         namespace = ns_entry[SolrConfigConst::NS_KEY]
-        split = namespace.split(".")
-        db_name = split.first
-
-        split.delete_at 0
-        collection_name = split.join(".")
+        db_name, collection_name = Util.get_db_and_coll_from_ns(namespace)
 
         if db_set.has_key? db_name then
           db_set[db_name] << collection_name

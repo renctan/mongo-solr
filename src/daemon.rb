@@ -16,16 +16,18 @@ module MongoSolr
     def_delegators :@solr, :update_db_set
 
     # @param solr [SolrSynchronizer]
-    def initialize(solr)
+    # @param checkpoint [MongoSolr::CheckpointData]
+    def initialize(solr, checkpoint)
       @thread = nil
       @solr = solr
+      @checkpoint = checkpoint
     end
 
     # Starts a new thread performing the sync operation. Does nothing if there is already
     # an existing thread running.
     def start
       if @thread.nil? then
-        @thread = Thread.start { @solr.sync }
+        @thread = Thread.start { @solr.sync({ :checkpt => @checkpoint }) }
       end
     end
 
@@ -82,7 +84,8 @@ module MongoSolr
             opt[:db_set] = new_db_set
 
             solr_sync =
-              SolrSyncThread.new(SolrSynchronizer.new(solr, mongo, config_writer, opt))
+              SolrSyncThread.new(SolrSynchronizer.new(solr, mongo, config_writer, opt),
+                                 solr_config.get_checkpoint_data)
             solr_sync.start
           else
             solr_sync = nil
