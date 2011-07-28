@@ -91,12 +91,11 @@ class ExceptionHandlingTest < Test::Unit::TestCase
     end
 
     should "continue dumping after being disconnected" do
-      @solr_sync.update_db_set({})
+      @solr_sync.update_config({ :db_set => {} })
 
       @test_coll1.insert({ :x => 1 })
       @test_coll1.db.get_last_error
 
-      @solr.stubs(:add)
       @solr.stubs(:commit)
 
       @solr_sync.sync do |mode, count|
@@ -106,7 +105,8 @@ class ExceptionHandlingTest < Test::Unit::TestCase
           @solr.expects(:add).once
           @solr.expects(:commit).at_least(1)
 
-          @solr_sync.add_collection(TEST_DB, "test1", false) do |add_coll_mode, backlog|
+          new_config = { :db_set => { TEST_DB => ["test1"] }}
+          @solr_sync.update_config(new_config) do |add_coll_mode, backlog|
             @solr_sync.stop!
             false
           end

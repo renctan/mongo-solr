@@ -33,6 +33,8 @@ module MongoSolr
     #   after encountering an error in the Solr server or MongoDB instance.
     # @option opt [Boolean] :auto_dump (false) If true, performs a full db dump when the
     #   oplog cursor gets too stale, otherwise, throws an exception.
+    # @opt [CheckpointData] :checkpt (nil) This will be used to continue from a previous
+    #   session if given.
     #
     # Note: This object assumes that the solr and mongo_connection params are valid. As a
     #   a consequence, it will keep on retrying whenever an exception on these objects
@@ -51,6 +53,7 @@ module MongoSolr
       @err_retry_interval = opt[:err_retry_interval] || 1
       @auto_dump = opt[:auto_dump] || false
       @config_writer = config_writer
+      @checkpoint = opt[:checkpt]
 
       @solr = SolrRetryDecorator.new(solr, @err_retry_interval, @logger)
 
@@ -86,41 +89,34 @@ module MongoSolr
 
     # Replaces the current set of collection to listen with a new one.
     #
-    # @param new_db_set [Hash<String, Array<Hash> >] The set of databases and their
+    # @opt [Hash<String, Array<Hash> >] :db_set The set of databases and their
     #   collections to index to Solr. The key should contain the database name in
     #   String and the value should be an array that contains the collections.
-    # @param wait [Boolean] Waits until the newly added sets are not in a backlogged state
-    #   before returning if set to true. Defaults to false.
-    def update_db_set(new_db_set, wait = false)
+    # @opt [CheckpointData] :checkpt (nil) This will be used to continue from a previous
+    #   session if given.
+    # @opt [Boolean] :wait (false) Waits until the newly added sets are not in a backlogged state
+    #   before returning if set to true.
+    # @param block [Proc] @see #add_collection_wo_lock
+    def update_config(opt = {}, &block)
       # Lock usage:
       # 1. @is_synching->@db_set->add_collection_wo_lock()
 
-      @synching_mutex.synchronize do
-        @db_set.use do |db_set, mutex|
-          new_db_set.each do |db_name, collection|
-            add_collection_wo_lock(db_set, @is_synching, db_name, collection, wait)
+      wait = opt[:wait] || false
+      checkpoint_opt = opt[:checkpt]
+      @checkpoint = checkpoint_opt unless checkpoint_opt.nil?
+
+      new_db_set = opt[:db_set]
+
+      unless new_db_set.nil? then
+        @synching_mutex.synchronize do
+          @db_set.use do |db_set, mutex|
+            new_db_set.each do |db_name, collection|
+              add_collection_wo_lock(db_set, @is_synching, db_name, collection, wait, &block)
+            end
+
+            db_set.clear
+            db_set.merge!(new_db_set)
           end
-
-          db_set.clear
-          db_set.merge!(new_db_set)
-        end
-      end
-    end
-
-    # Adds a new collection to index.
-    #
-    # @param db_name [String] Name of the database the collection belongs to.
-    # @param collection [String|Enumerable] Name of the collection(s) to add.
-    # @param wait [Boolean] Waits until the newly added sets are not in a backlogged state
-    #   before returning if set to true. Defaults to false.
-    # @param block[Proc] For debugging/testing only. @see #add_collection_wo_lock
-    def add_collection(db_name, collection, wait = false, &block)
-      # Lock usage:
-      # 1. @is_synching->@db_set->add_collection_wo_lock()      
-
-      @synching_mutex.synchronize do
-        @db_set.use do |db_set, mutex|
-          add_collection_wo_lock(db_set, @is_synching, db_name, collection, wait, &block)
         end
       end
     end
@@ -129,8 +125,6 @@ module MongoSolr
     # blocking call that contains an infinite loop. This method assumes that the databases
     # are already authenticated.
     #
-    # @option opt [MongoSolr::CheckpointData] :checkpt (nil) This will be used to
-    #   continue from a previous session if given.
     # @param block [Proc(mode, doc_count)] An optional  procedure that will be called during
     #   certain conditions:
     #
@@ -146,7 +140,7 @@ module MongoSolr
     # auth = { "users" => { :user => "root", :pwd => "root" },
     #          "admin" => { :user => "admin", :pwd => "" } }
     # solr.sync({ :db_pass => auth, :interval => 1 })
-    def sync(opt = {}, &block)
+    def sync(&block)
       # Lock usage:
       # 1. @stop_mutex->@synching_mutex
       # 2. get_db_set_snapshot()
@@ -164,10 +158,8 @@ module MongoSolr
         end
       end
 
-      checkpoint_data = opt[:checkpt]
-
-      cursor = init_sync(checkpoint_data)
-      last_timestamp = (checkpoint_data.nil? ? nil : checkpoint_data.commit_ts)
+      cursor = init_sync
+      last_timestamp = (@checkpoint.nil? ? nil : @checkpoint.commit_ts)
 
       yield :finished_dumping, 0 if block_given?
 
@@ -281,21 +273,7 @@ module MongoSolr
       end
     end
 
-    # Dumps all collections of the database (with the exception of system.* collections) to
-    # Solr for indexing without committing.
-    #
-    # @param db [Mongo::DB] The database instance to dump.
-    # @param timestamp [BSON::Timestamp] (nil) the timestamp to use when updating the update
-    #   timestamp
-    def dump_collections(db, timestamp = nil)
-      db.collection_names.each do |collection_name|
-        unless collection_name =~ SPECIAL_COLLECTION_NAME_PATTERN then
-          dump_collection(db, collection_name, timestamp)
-        end
-      end
-    end
-
-    # Dumps the contents of a collection to Solr without committing.
+    # Dumps the contents of a collection to Solr.
     #
     # @param db [Mongo::Database] The database of the collection.
     # @param collection_name [String] The name of the collection.
@@ -710,17 +688,15 @@ module MongoSolr
     # Convenience method for initializing the cursor for sync method. Also performs a
     # database dump when this was called for the first time.
     #
-    # @param checkpoint_data [MongoSolr::CheckpointData] @see #sync
-    #
     # @return [Mongo::Cursor] the cursor to the oplog entry, pointing to the next oplog
     #   entry to process.
-    def init_sync(checkpoint_data)
+    def init_sync
       cursor = nil
       last_commit = nil
 
-      unless checkpoint_data.nil? then
-        restore_from_checkpoint(checkpoint_data)
-        last_commit = checkpoint_data.commit_ts
+      unless @checkpoint.nil? then
+        restore_from_checkpoint(@checkpoint)
+        last_commit = @checkpoint.commit_ts
       end
 
       if last_commit.nil? then

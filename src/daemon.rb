@@ -13,21 +13,19 @@ module MongoSolr
   class SolrSyncThread
     extend Forwardable
 
-    def_delegators :@solr, :update_db_set
+    def_delegators :@solr, :update_config
 
     # @param solr [SolrSynchronizer]
-    # @param checkpoint [MongoSolr::CheckpointData]
-    def initialize(solr, checkpoint)
+    def initialize(solr)
       @thread = nil
       @solr = solr
-      @checkpoint = checkpoint
     end
 
     # Starts a new thread performing the sync operation. Does nothing if there is already
     # an existing thread running.
     def start
       if @thread.nil? then
-        @thread = Thread.start { @solr.sync({ :checkpt => @checkpoint }) }
+        @thread = Thread.start { @solr.sync }
       end
     end
 
@@ -74,20 +72,22 @@ module MongoSolr
 
             url = solr_config.solr_loc
             new_db_set = solr_config.get_db_set
+            new_checkpoint = solr_config.get_checkpoint_data
 
             if solr_sync_set.has_key? url then
               solr_sync = solr_sync_set[url]
-              solr_sync.update_db_set(new_db_set)
+
+              solr_sync.update_config({ :db_set => new_db_set, :checkpt => new_checkpoint })
               solr_sync_set.delete url
             elsif Util.url_ok?(url, logger) then
               solr = RSolr.connect(:url => url)
               config_writer = config_writer_builder.create_writer(url)
 
               opt[:db_set] = new_db_set
+              opt[:checkpt] = new_checkpoint
 
               solr_sync =
-                SolrSyncThread.new(SolrSynchronizer.new(solr, mongo, config_writer, opt),
-                                   solr_config.get_checkpoint_data)
+                SolrSyncThread.new(SolrSynchronizer.new(solr, mongo, config_writer, opt))
               solr_sync.start
             else
               solr_sync = nil
