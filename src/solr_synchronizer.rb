@@ -582,7 +582,13 @@ module MongoSolr
         cursor = get_oplog_cursor(timestamp)
         doc = cursor.next_document
 
-        if not doc.nil? and timestamp == doc["ts"] then
+        if doc.nil? or not cursor.has_next? then
+          # This does not necessarily mean that the cursor is too stale, since the
+          # timestamp passed can be a timestamp of a no-op entry. So double check
+          # if that said entry still exists.
+          entry = get_oplog_collection(@mode).find_one({ "ts" => timestamp })
+          ret = cursor unless entry.nil?
+        elsif timestamp == doc["ts"] then
           ret = cursor
         else
           @logger.warn("#{@name}: (#{timestamp.inspect}) is too old and not in the oplog")
