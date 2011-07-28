@@ -7,7 +7,6 @@
 var pathPrefix = "../../src/js/";
 
 load(pathPrefix + "msolr_const.js");
-load(pathPrefix + "msolr_db.js");
 load(pathPrefix + "msolr_server.js");
 load(pathPrefix + "msolr.js");
 load("../jstester.js");
@@ -15,8 +14,82 @@ load("../jstester.js");
 var CONFIG_DB_NAME = "MSolrServerTestConfigDB";
 var CONFIG_COLL_NAME = "MSolrDBConfigColl";
 var SOLR_SERVER_LOC = "http://mongo.solr.net/solr";
-var TEST_DB_1_NAME = "MSolrServerTestDB_1";
-var TEST_DB_2_NAME = "MSolrServerTestDB_2";
+
+var TEST_DB_1 = {
+  name: "MSolrServerTestDB_1",
+  coll: ["ab", "cd", "ef", "gh"]
+};
+
+var TEST_DB_2 = {
+  name: "MSolrServerTestDB_2",
+  coll: ["system.index", "ab"]
+};
+
+var TEST_DB_3 = {
+  name: "MSolrServerTestDB_3",
+  coll: ["deeply.nested.coll"]
+};
+
+/**
+ * Extracts the name of the collection from the namespace name.
+ * 
+ * @namespace {String} namespace The namespace string that includes the name of the
+ *   database and collection.
+ * 
+ * @return {String} the name of the collection.
+ */
+var extractCollName = function ( namespace ) {
+  var split = namespace.split( "." );
+  split.shift();
+  return split.join(".");
+};
+
+/**
+ * Gets the index of the first object to be found inside an array.
+ * 
+ * @param {Array} array The array to test.
+ * @param {Object} memberToTest The object to find.
+ * 
+ * @return {number} the index of the member if found and -1 if not.
+ */
+var arrayFind = function ( array, memberToTest ) {
+  var index = -1;
+
+  for ( var x = array.length; x--; ) {
+    if ( memberToTest == array[x] ) {
+      index = x;
+      break;
+    }
+  }
+
+  return index;
+};
+
+// Global Setup
+(function () {
+  var mongo = new Mongo();
+  var db;
+  var coll;
+  var x;
+
+  db = mongo.getDB( TEST_DB_1.name );
+  coll = TEST_DB_1.coll;
+  for( x = coll.length; x--; ) {
+    db.createCollection( coll[x] );
+  }
+
+  db = mongo.getDB( TEST_DB_2.name );
+  coll = TEST_DB_2.coll;
+  for( x = coll.length; x--; ) {
+    db.createCollection( coll[x] );
+  }
+
+  db = mongo.getDB( TEST_DB_3.name );
+  coll = TEST_DB_3.coll;
+  for( x = coll.length; x--; ) {
+    db.createCollection( coll[x] );
+  }
+})();
 
 var MSolrServerTest = function () {
   this.solr = null;
@@ -37,43 +110,102 @@ MSolrServerTest.prototype.teardown = function () {
   this.configDB.dropDatabase();
 };
 
-MSolrServerTest.prototype.dbTest = function () {
-  var configDoc;
-  var solrDB = this.solr.db( TEST_DB_1_NAME );
-
-  // Needs to create a collection in order to have the database created.
-  solrDB.index( "dummy", null, true );
-
-  configDoc = this.configColl.findOne( this.serverConfigCriteria );
-  assert.eq( TEST_DB_1_NAME + ".dummy", configDoc[MSolrConst.NS_KEY] );
-};
-
 MSolrServerTest.prototype.removeDBwithOneDBExistingTest = function () {
   var criteria = {};
-  var solrDB = this.solr.db( TEST_DB_1_NAME );
 
-  // Needs to create a collection in order to have the database created.
-  solrDB.index( "dummy" );
-  this.solr.removeDB( TEST_DB_1_NAME, true );
+  this.solr.index( TEST_DB_1.name, null, true );
+  this.solr.remove( TEST_DB_1.name, null, true );
 
-  criteria[MSolrConst.NS_KEY] = TEST_DB_1_NAME + ".dummy";
-  assert.eq( 0, this.configColl.count( criteria ) );
+  assert.eq( 0, this.configColl.count() );
 };
 
 MSolrServerTest.prototype.removeDBwithTwoDBExistingTest = function () {
-  // Needs to create a collection in order to have the database created.
-  this.solr.db( TEST_DB_1_NAME ).index( "dummy" );
-  this.solr.db( TEST_DB_2_NAME ).index( "another_dummy" );
+  this.solr.index( TEST_DB_1.name );
+  // Index a dummy collection
+  this.solr.index( TEST_DB_2.name + ".dummy", null, true );
 
-  this.solr.removeDB( TEST_DB_1_NAME, true );
+  this.solr.remove( TEST_DB_1.name, null, true );
 
   this.configColl.find( this.serverConfigCriteria ).forEach( function ( doc ) {
     // Only expecting one result
-    assert.eq( TEST_DB_2_NAME + ".another_dummy", doc[MSolrConst.NS_KEY] );
+    assert.eq( TEST_DB_2.name + ".dummy", doc[MSolrConst.NS_KEY] );
   });
 };
 
+MSolrServerTest.prototype.indexUsingDbNameShouldIncludeAllCollectionTest = function () {
+  var resultCount = 0;
+  var testColl = TEST_DB_1.coll;
+
+  this.solr.index( TEST_DB_1.name, null, true );
+
+  this.configColl.find( this.serverConfigCriteria ).forEach( function ( doc ) {
+    var collName = extractCollName( doc[MSolrConst.NS_KEY] );
+    assert.neq( -1, arrayFind( testColl, collName ) );
+    resultCount++;
+  });
+
+  assert.eq( testColl.length, resultCount );
+};
+
+MSolrServerTest.prototype.indexUsingDbNameShouldNotIncludeSystemCollectionTest = function () {
+  var testColl = TEST_DB_2.coll;
+  var resultCount = 0;
+
+  this.solr.index( TEST_DB_2.name, null, true );
+
+  this.configColl.find( this.serverConfigCriteria ).forEach( function ( doc ) {
+    var collName = extractCollName( doc[MSolrConst.NS_KEY] );
+    assert( !/^[^.]*\.system\..*/.test( collName ) );
+    assert.neq( -1, arrayFind( testColl, collName ) );
+    resultCount++;
+  });
+
+  assert.eq( 1, resultCount );
+};
+
+MSolrServerTest.prototype.indexUsingDbNameShouldProperlySetDottedCollectionNamesTest = function () {
+  var ns = TEST_DB_3.name + "." + TEST_DB_3.coll[0];
+
+  this.solr.index( TEST_DB_3.name, null, true );
+
+  this.configColl.find( this.serverConfigCriteria ).forEach( function ( doc ) {
+    // Expecting only a single result
+    assert.eq( ns, doc[MSolrConst.NS_KEY] );
+  });
+};
+
+MSolrServerTest.prototype.indexShouldAddOneCollectionTest = function () {
+  var ns = TEST_DB_1.name + ".qwerty";
+
+  this.solr.index( ns, null, true );
+  this.configColl.find( this.serverConfigCriteria ).forEach( function ( doc ) {
+    // Expecting only a single result
+    assert.eq( ns, doc[MSolrConst.NS_KEY] );
+  });
+};
+
+MSolrServerTest.prototype.removeIndexTest = function () {
+  var criteria = {};
+  var ns = TEST_DB_1.name + ".qwerty";
+
+  this.solr.index( ns, null, true );
+  this.solr.remove( ns, null, true );
+
+  criteria[MSolrConst.SOLR_SERVER_LOC] = SOLR_SERVER_LOC;
+  criteria[MSolrConst.NS_KEY] = ns;
+
+  assert.eq( 0, this.configColl.count( criteria ) );
+};
+
 JSTester.run( new MSolrServerTest() );
+
+// Global Teardown
+(function () {
+  var mongo = new Mongo();
+  mongo.getDB( TEST_DB_1.name ).dropDatabase();
+  mongo.getDB( TEST_DB_2.name ).dropDatabase();
+  mongo.getDB( TEST_DB_3.name ).dropDatabase();
+})();
 
 })(); // Namespace wrapper
 

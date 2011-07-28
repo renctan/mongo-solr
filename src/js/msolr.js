@@ -123,15 +123,15 @@ MSolr.prototype.server = function ( location ) {
  */
 MSolr.prototype.index = function ( server, db, coll, field ) {
   if ( coll == null ) {
-    this.server( server ).db( db ).indexAll();
+    this.server( server ).index( db );
   }
   else {
-    this.server( server ).db( db ).index( coll, field );
+    this.server( server ).index( db + "." + coll, field );
   }
 };
 
 MSolr.prototype.toString = function ( ) {
-  return "config_collection: " + this.coll._fullName;
+  return "config_collection: " + this.coll.getFullName();
 };
 
 /**
@@ -139,5 +139,12 @@ MSolr.prototype.toString = function ( ) {
  */
 MSolr.prototype.tojson = function ( ) {
   return this.toString();
+};
+
+/**
+ * Gets the indexing configuration collection.
+ */
+MSolr.prototype._getConfigColl = function ( ) {
+  return this.coll;
 };
 
