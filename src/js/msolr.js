@@ -148,3 +148,29 @@ MSolr.prototype._getConfigColl = function ( ) {
   return this.coll;
 };
 
+/**
+ * Deletes all the index configuration data.
+ */
+MSolr.prototype.reset = function ( ) {
+  return this.coll.remove();
+};
+
+///////////////////////////////////////////////////////
+// Static methods
+
+MSolr.DEFAULT = new MSolr();
+
+/**
+ * @see MSolr#showConfig
+ */
+MSolr.showConfig = function ( ) {
+  return MSolr.DEFAULT.showConfig();
+};
+
+/**
+ * @see MSolr#reset
+ */
+MSolr.reset = function ( ) {
+  return MSolr.DEFAULT.reset();
+};
+
