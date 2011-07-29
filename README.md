@@ -4,6 +4,13 @@ A simple Ruby script for indexing the entire contents of a MongoDB instance (exc
 
 Please check out the wiki for more details about this project.
 
+# Features
+
+* Automatically retries failed operations to Mongo or Solr (The script assumes that the link to Mongo/Solr is just temporarily broken and can be resolved momentarily). 
+* Periodically sets checkpoints and automatically resumes from them.
+* Includes a client plugin for Mongo shell.
+* Supports indexing to multiple Solr Servers.
+
 # Ruby version
 
 The scripts can run on both v1.8.7 and 1.9.x, but it is not fully tested on v1.8.7, so it is recommended to use this with v1.9.

@@ -58,7 +58,7 @@ module MongoSolr
       @solr = SolrRetryDecorator.new(solr, @err_retry_interval, @logger)
 
       # The set of collections to listen to for updates in the oplogs.
-      ns_set = opt[:ns_set] || {}      
+      ns_set = opt[:ns_set] || {}
       @ns_set = MongoSolr::SynchronizedHash.new(ns_set)
 
       # The oplog data for collections that are still in the process of dumping.
