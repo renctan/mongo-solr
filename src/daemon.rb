@@ -71,19 +71,19 @@ module MongoSolr
             solr_config = ConfigFormatReader.new(config_data)
 
             url = solr_config.solr_loc
-            new_db_set = solr_config.get_db_set
+            new_ns_set = solr_config.get_ns_set
             new_checkpoint = solr_config.get_checkpoint_data
 
             if solr_sync_set.has_key? url then
               solr_sync = solr_sync_set[url]
 
-              solr_sync.update_config({ :db_set => new_db_set, :checkpt => new_checkpoint })
+              solr_sync.update_config({ :ns_set => new_ns_set, :checkpt => new_checkpoint })
               solr_sync_set.delete url
             elsif Util.url_ok?(url, logger) then
               solr = RSolr.connect(:url => url)
               config_writer = config_writer_builder.create_writer(url)
 
-              opt[:db_set] = new_db_set
+              opt[:ns_set] = new_ns_set
               opt[:checkpt] = new_checkpoint
 
               solr_sync =

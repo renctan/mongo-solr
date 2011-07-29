@@ -32,11 +32,12 @@ class ExceptionHandlingTest < Test::Unit::TestCase
       @connection.stubs(:database_names).returns([TEST_DB, TEST_DB_2])
       @test_coll1 = @connection.db(TEST_DB).create_collection("test1")
 
+      @test_coll1_ns = "#{TEST_DB}.#{@test_coll1.name}"
+
       @solr = mock()
 
-      basic_db_set = {
-        TEST_DB => Set.new(["test1", "test2"]),
-        TEST_DB_2 => Set.new(["test3"])
+      basic_ns_set = {
+        @test_coll1_ns => {}
       }
 
       config_writer = mock()
@@ -44,7 +45,7 @@ class ExceptionHandlingTest < Test::Unit::TestCase
       config_writer.stubs(:update_commit_timestamp)
 
       @solr_sync = MongoSolr::SolrSynchronizer.new(@solr, @connection, config_writer,
-                                                   { :db_set => basic_db_set,
+                                                   { :ns_set => basic_ns_set,
                                                      :logger => DEFAULT_LOGGER })
     end
 
@@ -91,7 +92,7 @@ class ExceptionHandlingTest < Test::Unit::TestCase
     end
 
     should "continue dumping after being disconnected" do
-      @solr_sync.update_config({ :db_set => {} })
+      @solr_sync.update_config({ :ns_set => {} })
 
       @test_coll1.insert({ :x => 1 })
       @test_coll1.db.get_last_error
@@ -105,7 +106,7 @@ class ExceptionHandlingTest < Test::Unit::TestCase
           @solr.expects(:add).once
           @solr.expects(:commit).at_least(1)
 
-          new_config = { :db_set => { TEST_DB => ["test1"] }}
+          new_config = { :ns_set => { @test_coll1_ns => {} }}
           @solr_sync.update_config(new_config) do |add_coll_mode, backlog|
             @solr_sync.stop!
             false

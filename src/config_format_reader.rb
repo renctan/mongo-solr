@@ -24,22 +24,22 @@ module MongoSolr
     # Converts the config data object to a format recognized by
     # MongoSolr::SolrSynchronizer#update_db_set
     #
-    # @return [Hash] @see MongoSolr::SolrSynchronizer#update_db_set
-    def get_db_set
-      db_set = {}
+    # @return [Hash] @see MongoSolr::SolrSynchronizer#update_config(opt[:ns_set])
+    def get_ns_set
+      ns_set = {}
 
       @config_data.each do |ns_entry|
         namespace = ns_entry[SolrConfigConst::NS_KEY]
-        db_name, collection_name = Util.get_db_and_coll_from_ns(namespace)
+        fields = []
 
-        if db_set.has_key? db_name then
-          db_set[db_name] << collection_name
+        if ns_set.has_key? namespace then
+          ns_set[namespace] << fields
         else
-          db_set[db_name] = Set.new([collection_name])
+          ns_set[namespace] = Set.new(fields)
         end
       end
 
-      return db_set
+      return ns_set
     end
 
     # @return [MongoSolr::CheckpointData] the checkpoint data extracted from the

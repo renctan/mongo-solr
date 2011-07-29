@@ -16,20 +16,14 @@ class ConfigFormatReaderTest < Test::Unit::TestCase
       assert_equal(CONFIG_DATA.first[SolrConfigConst::SOLR_URL_KEY], @reader.solr_loc)
     end
 
-    should "extract db_set correctly" do
-      db_set = @reader.get_db_set
-      assert_equal(2, db_set.size)
+    should "extract ns_set correctly" do
+      ns_set = @reader.get_ns_set
+      assert_equal(CONFIG_DATA.size, ns_set.size)
 
-      coll = db_set["courses"]
-      assert_equal(3, coll.size)
-      assert(coll.include? "undergrad")
-      assert(coll.include? "masters")
-      assert(coll.include? "doctoral")
-
-      coll = db_set["staff"]
-      assert_equal(2, coll.size)
-      assert(coll.include? "prof")
-      assert(coll.include? "admin")
+      CONFIG_DATA.each do |doc|
+        ns = doc[SolrConfigConst::NS_KEY]
+        assert(ns_set.include?(ns), "#{ns} not included in #{ns_set.inspect}")
+      end
     end
 
     should "extract checkpoint data correctly" do

@@ -22,8 +22,9 @@ module MongoSolr
     #
     # @option opt [Symbol] :mode (:auto) Mode of the MongoDB server connected to. Recognized 
     #   symbols - :repl_set, :master_slave, :auto
-    # @option opt [Hash<String, Set<String> >] :db_set ({}) The set of databases and their
-    #   collections to index to Solr. @see #update_db_set
+    # @option opt [Hash<String, Set<String> >] :ns_set ({}) The set of namespaces to index.
+    #   The key contains the name of the namespace and the value contains the names of the
+    #   fields. Empty set for fields means all fields will be indexed.
     # @option opt [Logger] :logger The object to use for logging. The default logger outputs
     #   to stdout.
     # @option opt [String] :name ("") A string label that will be prefixed to all log outputs.
@@ -57,8 +58,8 @@ module MongoSolr
       @solr = SolrRetryDecorator.new(solr, @err_retry_interval, @logger)
 
       # The set of collections to listen to for updates in the oplogs.
-      db_set = opt[:db_set] || {}
-      @db_set = MongoSolr::SynchronizedHash.new(db_set)
+      ns_set = opt[:ns_set] || {}      
+      @ns_set = MongoSolr::SynchronizedHash.new(ns_set)
 
       # The oplog data for collections that are still in the process of dumping.
       @oplog_backlog = MongoSolr::SynchronizedHash.new
@@ -68,7 +69,7 @@ module MongoSolr
       @synching_mutex = Mutex.new
       @checkpoint_mutex = Mutex.new
 
-      # implicit db_set mutex
+      # implicit ns_set mutex
       # implicit synching_set mutex
 
       # True to tell the sync thread to stop.
@@ -93,9 +94,7 @@ module MongoSolr
 
     # Replaces the current set of collection to listen with a new one.
     #
-    # @opt [Hash<String, Array<Hash> >] :db_set The set of databases and their
-    #   collections to index to Solr. The key should contain the database name in
-    #   String and the value should be an array that contains the collections.
+    # @option opt [Hash<String, Set<String> >] :ns_set ({}) @see #new
     # @opt [CheckpointData] :checkpt (nil) This will be used to continue from a previous
     #   session if given.
     # @opt [Boolean] :wait (false) Waits until the newly added sets are not in a backlogged state
@@ -104,7 +103,7 @@ module MongoSolr
     def update_config(opt = {}, &block)
       # Lock usage:
       # 1. @checkpoint_mutex
-      # 2. @is_synching->@db_set->add_collection_wo_lock()
+      # 2. @is_synching->@ns_set->add_collection_wo_lock()
 
       wait = opt[:wait] || false
       checkpoint_opt = opt[:checkpt]
@@ -113,18 +112,15 @@ module MongoSolr
         @checkpoint_mutex.synchronize { @checkpoint = checkpoint_opt }
       end
 
-      new_db_set = opt[:db_set]
+      new_ns_set = opt[:ns_set]
 
-      unless new_db_set.nil? then
+      unless new_ns_set.nil? then
         @synching_mutex.synchronize do
-          @db_set.use do |db_set, mutex|
-            new_db_set.each do |db_name, collection|
-              add_collection_wo_lock(db_set, checkpoint_opt, @is_synching, db_name,
-                                     collection, wait, &block)
-            end
+          @ns_set.use do |ns_set, mutex|
+            diff = new_ns_set.reject { |k, v| ns_set.has_key?(k) }
+            add_namespace(diff, checkpoint_opt, @is_synching, wait, &block)
 
-            db_set.clear
-            db_set.merge!(new_db_set)
+            @ns_set = SynchronizedHash.new(new_ns_set)
           end
         end
       end
@@ -153,7 +149,7 @@ module MongoSolr
       # Lock usage:
       # 1. @stop_mutex->@synching_mutex
       # 2. @checkpoint_mutex
-      # 3. get_db_set_snapshot()
+      # 3. get_ns_set_snapshot()
       # 4. insert_to_backlog()
       # 5. stop_synching?()
 
@@ -180,7 +176,7 @@ module MongoSolr
       loop do
         return if stop_synching?
         doc_batch = []
-        db_set_snapshot = get_db_set_snapshot
+        ns_set_snapshot = get_ns_set_snapshot
         doc_count = 0 # count for the current batch
         cursor_exception_occured = false
 
@@ -205,7 +201,7 @@ module MongoSolr
           else
             if insert_to_backlog(doc) then
               # Do nothing
-            elsif filter_entry?(db_set_snapshot, doc["ns"]) then
+            elsif filter_entry?(ns_set_snapshot, doc["ns"]) then
               @logger.debug "#{@name}: skipped oplog: #{doc}"
             else
               doc_batch << doc
@@ -248,17 +244,15 @@ module MongoSolr
       end
     end
 
-    # Gets the current snapshot of the db_set.
+    # Gets the current snapshot of the ns_set.
     #
-    # @return [Hash<String, Enumerable<String> >] a hash for the set of collections to index.
-    #   The key contains the name of the database while the value contains an array of
-    #   collection names.
-    def get_db_set_snapshot
-      # Lock usage: @db_set
-      return @db_set.use { |db_set, mutex| db_set.clone }
+    # @return [Hash<String, Set<String> >] @see #new(opt[:ns_set])
+    def get_ns_set_snapshot
+      # Lock usage: @ns_set
+      return @ns_set.use { |ns_set, mutex| ns_set.clone }
     end
 
-    alias_method :db_set, :get_db_set_snapshot
+    alias_method :ns_set, :get_ns_set_snapshot
 
     ############################################################################
     private
@@ -269,36 +263,21 @@ module MongoSolr
       "you are connected to a server running on master/slave or replica set configuration."
     OPLOG_AMBIGUOUS_MSG = "Cannot determine which oplog to use. Please specify " +
       "the appropriate mode."
-    STALE_CURSOR_MSG = "Sync cursor is too stale: Cannot catch up with the update rate. " + 
+    STALE_CURSOR_MSG = "Sync cursor is too stale: Cannot catch up with the update rate. " +
       "Please perform a manual dump."
     OPLOG_BATCH_SIZE = 200
 
-    # Dumps the contents of the MongoDB server to be indexed to Solr.
-    #
-    # @param db_set [Hash<String, Array<String> >] a hash which contains the set of
-    #   collections to index. The key contains the name of the database while the value
-    #   contains an array of collection names.
-    # @param timestamp [BSON::Timestamp] (nil) the timestamp to use when updating the commit
-    #   timestamp
-    def dump_db_contents(db_set, timestamp = nil)
-      db_set.each do |db_name, collections|
-        db = @db_connection.db(db_name)
-        collections.each { |coll| dump_collection(db, coll, timestamp) }
-      end
-    end
-
     # Dumps the contents of a collection to Solr.
     #
-    # @param db [Mongo::Database] The database of the collection.
-    # @param collection_name [String] The name of the collection.
+    # @param namespace [String] The namespace of the collection to dump.
     # @param timestamp [BSON::Timestamp] (nil) the timestamp to use when updating the update
     #   timestamp. Nil timestamps will be ignored.
-    def dump_collection(db, collection_name, timestamp = nil)
-      namespace = "#{db.name}.#{collection_name}"
+    def dump_collection(namespace, timestamp = nil)
       @logger.info "#{@name}: dumping #{namespace}..."
+      db_name, coll = Util.get_db_and_coll_from_ns(namespace)
 
       retry_until_ok do
-        db.collection(collection_name).find().each do |doc|
+        @db_connection[db_name][coll].find().each do |doc|
           @solr.add(DocumentTransform.translate_doc(doc))
           # Do not update commit timestamp here since the stream of data from the
           # database is not guaranteed to be sequential in time.
@@ -391,21 +370,14 @@ module MongoSolr
 
     # Helper method for determining whether to apply the oplog entry changes to Solr.
     #
-    # @param db_set [Hash<String, Array<String> >] a hash which contains the set of
-    #   collections to index. The key contains the name of the database while the value
-    #   contains an array of collection names.
+    # @param ns_set [Hash<String, Set<String> >] ({}) The set of namespaces to index.
+    #   The key contains the name of the namespace and the value contains the names of the
+    #   fields. Empty set for fields means all fields will be indexed.
     # @param namespace [String] The ns field in the oplog entry.
     #
     # @return [Boolean] true if the oplog entry should be skipped.
-    def filter_entry?(db_set, namespace)
-      db_name, collection_name = Util.get_db_and_coll_from_ns(namespace)
-      do_skip = true
-
-      if db_set.has_key?(db_name) then
-        do_skip = !db_set[db_name].include?(collection_name)
-      end
-
-      return do_skip
+    def filter_entry?(ns_set, namespace)
+      return !ns_set.has_key?(namespace)
     end
     
     # @param mode [Symbol] The mode of which the database server is running on. Recognized
@@ -461,39 +433,21 @@ module MongoSolr
     end
 
     # Adds a collection without using a lock. Caller should be holding the lock for
-    # @synching_mutex and @db_set while calling this method.
+    # @synching_mutex and @ns_set while calling this method.
     #
-    # @param db_set [Hash] The hash inside the SynchronizedHash wrapper.
+    # @param new_ns
     # @param checkpoint [MongoSolr::CheckpointData] The checkpoint data, ignored if nil.
     # @param is_synching [Boolean] Whether the main sync thread is running.
-    # @param db_name [String] The name of the database
-    # @param collection [String|Enumerable] Name of the collection(s) to add.
     # @param wait [Boolean] Waits until the newly added sets are not in a backlogged state
     #   before returning if set to true.
     # @param &block [Proc(mode, backlog)] @see #dump_and_sync
-    def add_collection_wo_lock(db_set, checkpoint, is_synching, db_name, collection, wait, &block)
+    def add_namespace(new_ns, checkpoint, is_synching, wait, &block)
       # Lock usage:
       # 1. calls dump_and_sync
       # 2. calls replay_oplog_and_sync
 
-      if collection.is_a? Enumerable then
-        new_collection = Set.new(collection)
-      else
-        new_collection = Set.new([collection])
-      end
-
-      current_collection = db_set[db_name]
-
-      if current_collection.nil? then
-        diff = new_collection
-      else
-        diff = new_collection - current_collection
-      end
-
       if is_synching then
-        diff.each do |coll|
-          ns = "#{db_name}.#{coll}"
-
+        new_ns.each do |ns, fields|
           if checkpoint.nil? then
             dump_and_sync(ns, wait, &block)
           else
@@ -643,7 +597,7 @@ module MongoSolr
       backlog_sync_thread = Thread.start do
         @oplog_backlog[oplog_ns] = []
         timestamp = retry_until_ok { get_last_oplog_timestamp }
-        dump_collection(db, coll_name, timestamp)
+        dump_collection(oplog_ns, timestamp)
         @solr.commit
 
         # For testing/debugging only
@@ -704,13 +658,13 @@ module MongoSolr
         cursor = perform_full_dump
       else
         cursor = retry_until_ok { get_oplog_cursor_w_check(last_commit) }
-        perform_full_dump if cursor.nil?
+        cursor = perform_full_dump if cursor.nil?
       end
 
       return cursor
     end
 
-    # Performs a dump of the database (filtered by the current db_set) and returns the
+    # Performs a dump of the database (filtered by the current ns_set) and returns the
     # cursor to the oplog that points to the latest entry just before the dump is
     # performed
     #
@@ -723,8 +677,9 @@ module MongoSolr
         get_oplog_cursor(timestamp)
       end
 
-      db_set_snapshot = get_db_set_snapshot
-      dump_db_contents(db_set_snapshot, timestamp)
+      get_ns_set_snapshot.each do |namespace, field|
+        dump_collection(namespace, timestamp)
+      end
 
       return cursor
     end

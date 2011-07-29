@@ -9,18 +9,25 @@ class SolrSynchronizerTest < Test::Unit::TestCase
   TEST_DB = "MongoSolrSynchronizerIntegrationTestDB"
   TEST_DB_2 = "#{TEST_DB}_2"
   DEFAULT_LOGGER = Logger.new("/dev/null")
+#  DEFAULT_LOGGER = Logger.new(STDOUT)
 
   context "basic" do
     setup do
       @test_coll1 = DB_CONNECTION.db(TEST_DB).create_collection("test1")
       @test_coll2 = DB_CONNECTION.db(TEST_DB).create_collection("test2")
       @test_coll3 = DB_CONNECTION.db(TEST_DB_2).create_collection("test3")
+
+      @test_coll1_ns = "#{@test_coll1.db.name}.#{@test_coll1.name}"
+      @test_coll2_ns = "#{@test_coll2.db.name}.#{@test_coll2.name}"
+      @test_coll3_ns = "#{@test_coll3.db.name}.#{@test_coll3.name}"
+
       @connection = DB_CONNECTION
       @connection.stubs(:database_names).returns([TEST_DB, TEST_DB_2])
 
-      basic_db_set = {
-        TEST_DB => Set.new(["test1", "test2"]),
-        TEST_DB_2 => Set.new(["test3"])
+      basic_ns_set = {
+        @test_coll1_ns => {},
+        @test_coll2_ns => {},
+        @test_coll3_ns => {}
       }
 
       @solr = mock()
@@ -29,7 +36,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       config_writer.stubs(:update_commit_timestamp)
 
       @solr_sync = MongoSolr::SolrSynchronizer.new(@solr, @connection, config_writer,
-                                                   { :db_set => basic_db_set,
+                                                   { :ns_set => basic_ns_set,
                                                      :logger => DEFAULT_LOGGER })
     end
 
@@ -187,10 +194,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         @db = DB_CONNECTION.db(TEST_DB)
         @db2 = DB_CONNECTION.db(TEST_DB_2)
 
-        @db_set_coll1 = {}
-        @db_set_coll1[@db.name] = Set.new([@test_coll1.name])
-
-        @solr_sync.update_config({ :db_set => @db_set_coll1 })
+        @ns_set = { @test_coll1_ns => {} }
+        @solr_sync.update_config({ :ns_set => @ns_set })
       end
 
       context "pre-defined collection set" do
@@ -209,8 +214,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         end
 
         should "update on collection in the list (2 db)" do
-          @db_set_coll1[@db2.name] = Set.new([@test_coll3.name])
-          @solr_sync.update_config({ :db_set => @db_set_coll1 })
+          @ns_set[@test_coll3_ns] = {}
+          @solr_sync.update_config({ :ns_set => @ns_set })
 
           @solr.stubs(:commit)
 
@@ -228,8 +233,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         end
 
         should "update on collection in the list (same db, diff coll)" do
-          @db_set_coll1[@db.name].add(@test_coll2.name)
-
+          @ns_set[@test_coll2_ns] = {}
+          @solr_sync.update_config({ :ns_set => @ns_set, :wait => true })
           @solr.stubs(:commit)
 
           @solr_sync.sync do |mode, doc_count|
@@ -274,7 +279,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
       context "dynamic collection set modification" do
         setup do
-          @solr_sync.update_config({ :db_set => @db_set_coll1 })
+          @solr_sync.update_config({ :ns_set => @ns_set })
         end
 
         should "should update on new entry added in the set (same db)" do
@@ -283,8 +288,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
           @solr_sync.sync do |mode, doc_count|
             if mode == :finished_dumping then
-              @db_set_coll1[@db.name] << @test_coll2.name
-              @solr_sync.update_config({ :db_set => @db_set_coll1, :wait => true })
+              @ns_set[@test_coll2_ns] = {}
+              @solr_sync.update_config({ :ns_set => @ns_set, :wait => true })
               @test_coll2.insert({ "auth" => "Matz" })
             else
               break
@@ -298,8 +303,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
           @solr_sync.sync do |mode, doc_count|
             if mode == :finished_dumping then
-              @db_set_coll1[@db2.name] = Set.new([@test_coll3.name])
-              @solr_sync.update_config({ :db_set => @db_set_coll1, :wait => true })
+              @ns_set[@test_coll3_ns] = {}
+              @solr_sync.update_config({ :ns_set => @ns_set, :wait => true })
               @test_coll3.insert({ "auth" => "Matz" })
             else
               break
@@ -308,16 +313,16 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         end
 
         should "should not update on entry removed from the set" do
-          @db_set_coll1[@db.name] << @test_coll2.name
-          @solr_sync.update_config(@db_set_coll1)
+          @ns_set[@test_coll2_ns] = {}
+          @solr_sync.update_config(@ns_set)
 
           @solr.expects(:add).never
           @solr.stubs(:commit)
 
           @solr_sync.sync do |mode, doc_count|
             if mode == :finished_dumping then
-              @db_set_coll1[@db.name] = Set.new([@test_coll1.name])
-              @solr_sync.update_config({ :db_set => @db_set_coll1, :wait => true })
+              @ns_set.delete(@test_coll2_ns)
+              @solr_sync.update_config({ :ns_set => @ns_set, :wait => true })
               @test_coll2.insert({ "auth" => "Matz" })
             else
               break
@@ -328,7 +333,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
       context "backlog update" do
         setup do
-          @solr_sync.update_config({ :db_set => @db_set_coll1, :wait => true })
+          @solr_sync.update_config({ :ns_set => @ns_set, :wait => true })
         end
 
         should "update perform all inserts in the backlog" do
@@ -339,8 +344,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
             @solr_sync.sync do |mode, doc_count|
               if mode == :finished_dumping then
-                @db_set_coll1[@db2.name] = (@test_coll3.name)
-                @solr_sync.update_config({ :db_set => @db_set_coll1 }) do |add_stage, backlog|
+                @ns_set[@test_coll3_ns] = {}
+                @solr_sync.update_config({ :ns_set => @ns_set }) do |add_stage, backlog|
                   if add_stage == :finished_dumping and not finished_inserting then
                     @test_coll3.insert({ "lang" => "Ruby" })
                     @test_coll3.insert({ "auth" => "Matz" })
@@ -371,8 +376,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
           @solr_sync.sync do |mode, doc_count|
             if mode == :finished_dumping then
-                @db_set_coll1[@db2.name] = (@test_coll3.name)
-              @solr_sync.update_config({ :db_set => @db_set_coll1 }) do |add_stage, backlog|
+              @ns_set[@test_coll3_ns] = {}
+              @solr_sync.update_config({ :ns_set => @ns_set }) do |add_stage, backlog|
                 if add_stage == :finished_dumping and not finished_inserting then
                   @test_coll3.insert({ "lang" => "Ruby" })
 
@@ -566,7 +571,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
         @solr_sync.sync do |mode, count|
           if mode == :finished_dumping then
-            @solr_sync.update_config({ :db_set => {}, :wait => true } )
+            @solr_sync.update_config({ :ns_set => {}, :wait => true } )
 
             @test_coll1.insert({ :x => 1 })
             @test_coll1.db.get_last_error
@@ -580,7 +585,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
             @solr.expects(:add).once
             @solr.expects(:commit).at_least_once
 
-            @solr_sync.update_config({ :db_set => { @test_coll1.db.name => @test_coll1.name },
+            @solr_sync.update_config({ :ns_set => { @test_coll1_ns => {} },
                                        :checkpt => checkpoint_data,
                                        :wait => true }) do |update_mode, update_backlog|
               flunk("Should not perform dump!") if update_mode == :finished_dumping
@@ -600,7 +605,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         update_proc = Proc.new do |checkpoint_data|
           insert_done = false
 
-          @solr_sync.update_config({ :db_set => { @test_coll1.db.name => @test_coll1.name },
+          @solr_sync.update_config({ :ns_set => { @test_coll1_ns => {} },
                                      :checkpt => checkpoint_data,
                                      :wait => true }) do |mode, backlog|
             if mode == :finished_dumping then
@@ -638,7 +643,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
             checkpoint_data = MongoSolr::CheckpointData.new(timestamp)
             checkpoint_data.set(@test_coll1_ns, timestamp)
 
-            @solr_sync.update_config({ :db_set => {}, :wait => true } )
+            @solr_sync.update_config({ :ns_set => {}, :wait => true } )
             @test_coll1.insert({ :y => 1 })
 
             update_thread = Thread.start { update_proc.call(checkpoint_data) }
