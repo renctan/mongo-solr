@@ -183,12 +183,6 @@ module MongoSolr
         loop do
           begin
             doc = cursor.next_document
-          rescue Mongo::OperationFailure
-            if @auto_dump then
-              cursor = perform_full_dump
-            else
-              raise StaleCursorException, STALE_CURSOR_MSG
-            end
           rescue => e
             @logger.error "#{@name}: #{Util.get_full_exception_msg(e)}"
             cursor_exception_occured = true
