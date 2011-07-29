@@ -560,6 +560,95 @@ class SolrSynchronizerTest < Test::Unit::TestCase
           end
         end
       end
+
+      should "start indexing from the checkpoint after updating new db_set" do
+        @solr.stubs(:commit)
+
+        @solr_sync.sync do |mode, count|
+          if mode == :finished_dumping then
+            @solr_sync.update_config({ :db_set => {}, :wait => true } )
+
+            @test_coll1.insert({ :x => 1 })
+            @test_coll1.db.get_last_error
+            # hack for getting the last oplog timestamp
+            timestamp = @solr_sync.send :get_last_oplog_timestamp
+
+            @test_coll1.insert({ :y => "why?" })
+            checkpoint_data = MongoSolr::CheckpointData.new(timestamp)
+            checkpoint_data.set(@test_coll1_ns, timestamp)
+
+            @solr.expects(:add).once
+            @solr.expects(:commit).at_least_once
+
+            @solr_sync.update_config({ :db_set => { @test_coll1.db.name => @test_coll1.name },
+                                       :checkpt => checkpoint_data,
+                                       :wait => true }) do |update_mode, update_backlog|
+              flunk("Should not perform dump!") if update_mode == :finished_dumping
+            end
+
+            break
+          end
+        end
+      end
+
+      should "consume backlog after updating new db_set with checkpoint" do
+        @solr.stubs(:commit)
+        @solr.stubs(:add)
+        @test_coll1.insert({ :x => 1 })
+
+        update_thread = nil
+        update_proc = Proc.new do |checkpoint_data|
+          insert_done = false
+
+          @solr_sync.update_config({ :db_set => { @test_coll1.db.name => @test_coll1.name },
+                                     :checkpt => checkpoint_data,
+                                     :wait => true }) do |mode, backlog|
+            if mode == :finished_dumping then
+              flunk("Should not perform dump!")
+            elsif mode == :finished_updating then
+              if insert_done then
+                if backlog.empty? then
+                  true
+                else
+                  false
+                end
+              else
+                @test_coll1.insert({ :z => "why?" })
+
+                @solr.expects(:add).once
+                @solr.expects(:commit).at_least_once
+
+                Thread.pass
+                insert_done = true
+              end
+            else
+              @solr_sync.stop!
+            end
+          end
+        end
+
+        @solr.stubs(:add)
+
+        @solr_sync.sync do |mode, count|
+          if mode == :finished_dumping then
+            @test_coll1.db.get_last_error
+
+            # hack for getting the last oplog timestamp
+            timestamp = @solr_sync.send :get_last_oplog_timestamp
+            checkpoint_data = MongoSolr::CheckpointData.new(timestamp)
+            checkpoint_data.set(@test_coll1_ns, timestamp)
+
+            @solr_sync.update_config({ :db_set => {}, :wait => true } )
+            @test_coll1.insert({ :y => 1 })
+
+            update_thread = Thread.start { update_proc.call(checkpoint_data) }
+          else
+            Thread.pass
+          end
+        end
+
+        update_thread.join
+      end
     end
   end
 end

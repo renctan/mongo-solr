@@ -53,7 +53,6 @@ module MongoSolr
       @err_retry_interval = opt[:err_retry_interval] || 1
       @auto_dump = opt[:auto_dump] || false
       @config_writer = config_writer
-      @checkpoint = opt[:checkpt]
 
       @solr = SolrRetryDecorator.new(solr, @err_retry_interval, @logger)
 
@@ -67,6 +66,8 @@ module MongoSolr
       # Locks should be taken in this order to avoid deadlock
       @stop_mutex = Mutex.new
       @synching_mutex = Mutex.new
+      @checkpoint_mutex = Mutex.new
+
       # implicit db_set mutex
       # implicit synching_set mutex
 
@@ -77,6 +78,9 @@ module MongoSolr
       # True if this object is currently performing a sync with the database
       # protected by @synching_mutex
       @is_synching = false 
+
+      # protected by @checkpoint_mutex
+      @checkpoint = opt[:checkpt]
     end
 
     # Stop the sync operation
@@ -96,14 +100,18 @@ module MongoSolr
     #   session if given.
     # @opt [Boolean] :wait (false) Waits until the newly added sets are not in a backlogged state
     #   before returning if set to true.
-    # @param block [Proc] @see #add_collection_wo_lock
+    # @param block [Proc] @see #dump_and_sync
     def update_config(opt = {}, &block)
       # Lock usage:
-      # 1. @is_synching->@db_set->add_collection_wo_lock()
+      # 1. @checkpoint_mutex
+      # 2. @is_synching->@db_set->add_collection_wo_lock()
 
       wait = opt[:wait] || false
       checkpoint_opt = opt[:checkpt]
-      @checkpoint = checkpoint_opt unless checkpoint_opt.nil?
+
+      unless checkpoint_opt.nil? then
+        @checkpoint_mutex.synchronize { @checkpoint = checkpoint_opt }
+      end
 
       new_db_set = opt[:db_set]
 
@@ -111,7 +119,8 @@ module MongoSolr
         @synching_mutex.synchronize do
           @db_set.use do |db_set, mutex|
             new_db_set.each do |db_name, collection|
-              add_collection_wo_lock(db_set, @is_synching, db_name, collection, wait, &block)
+              add_collection_wo_lock(db_set, checkpoint_opt, @is_synching, db_name,
+                                     collection, wait, &block)
             end
 
             db_set.clear
@@ -143,9 +152,10 @@ module MongoSolr
     def sync(&block)
       # Lock usage:
       # 1. @stop_mutex->@synching_mutex
-      # 2. get_db_set_snapshot()
-      # 3. insert_to_backlog()
-      # 4. stop_synching?()
+      # 2. @checkpoint_mutex
+      # 3. get_db_set_snapshot()
+      # 4. insert_to_backlog()
+      # 5. stop_synching?()
 
       @stop_mutex.synchronize do
         @synching_mutex.synchronize do
@@ -158,8 +168,12 @@ module MongoSolr
         end
       end
 
-      cursor = init_sync
-      last_timestamp = (@checkpoint.nil? ? nil : @checkpoint.commit_ts)
+      checkpoint = @checkpoint_mutex.synchronize do
+        @checkpoint.clone unless @checkpoint.nil?
+      end
+
+      cursor = init_sync(checkpoint)
+      last_timestamp = (checkpoint.nil? ? nil : checkpoint.commit_ts)
 
       yield :finished_dumping, 0 if block_given?
 
@@ -450,27 +464,17 @@ module MongoSolr
     # @synching_mutex and @db_set while calling this method.
     #
     # @param db_set [Hash] The hash inside the SynchronizedHash wrapper.
-    # @param is_synching [Boolean]
+    # @param checkpoint [MongoSolr::CheckpointData] The checkpoint data, ignored if nil.
+    # @param is_synching [Boolean] Whether the main sync thread is running.
     # @param db_name [String] The name of the database
     # @param collection [String|Enumerable] Name of the collection(s) to add.
     # @param wait [Boolean] Waits until the newly added sets are not in a backlogged state
     #   before returning if set to true.
-    # @param &block [Proc(mode, backlog)] Extra block parameter for debugging and testing.
-    #   The mode can be :finished_dumping or :depleted_backlog, which describes on which
-    #   stage it is running on. The backlog paramereter is the array of backlogged oplog
-    #   This block will be called repeatedly during the :finished_dumping stage until the
-    #   block returns (break) a false value
-    def add_collection_wo_lock(db_set, is_synching, db_name, collection, wait, &block)
+    # @param &block [Proc(mode, backlog)] @see #dump_and_sync
+    def add_collection_wo_lock(db_set, checkpoint, is_synching, db_name, collection, wait, &block)
       # Lock usage:
-      # 1. @oplog_backlog
-      # 2. Spawns a thread that uses @oplog_backlog
-
-      if db_set.has_key? db_name then
-        current_collection = db_set[db_name]
-      else
-        current_collection = Set.new
-        db_set[db_name] = current_collection
-      end
+      # 1. calls dump_and_sync
+      # 2. calls replay_oplog_and_sync
 
       if collection.is_a? Enumerable then
         new_collection = Set.new(collection)
@@ -478,12 +482,27 @@ module MongoSolr
         new_collection = Set.new([collection])
       end
 
-      diff = new_collection - current_collection
-      current_collection.merge(diff)
+      current_collection = db_set[db_name]
+
+      if current_collection.nil? then
+        diff = new_collection
+      else
+        diff = new_collection - current_collection
+      end
 
       if is_synching then
         diff.each do |coll|
-          dump_and_sync(db_name, coll, wait, &block)
+          ns = "#{db_name}.#{coll}"
+
+          if checkpoint.nil? then
+            dump_and_sync(ns, wait, &block)
+          else
+            @oplog_backlog[ns] = []
+            start_ts = checkpoint[ns]
+            end_ts = retry_until_ok { get_last_oplog_timestamp }
+
+            replay_oplog_and_sync(ns, start_ts, end_ts, false, &block)
+          end
         end
       end
     end
@@ -495,6 +514,9 @@ module MongoSolr
     #
     # @return true when the entry was inserted to the backlog
     def insert_to_backlog(oplog_entry)
+      # Lock usage:
+      # 1. @oplog_backlog
+
       ns = oplog_entry["ns"]
       inserted = false
 
@@ -547,8 +569,9 @@ module MongoSolr
     def get_oplog_cursor(timestamp)
       Mongo::Cursor.new(get_oplog_collection(@mode),
                         { :tailable => true,
-                          :selector => {"op" => {"$ne" => "n"},
-                            "ts" => {"$gte" => timestamp } }
+                          :selector => { "op" => { "$ne" => "n" },
+                            "ts" => { "$gte" => timestamp } },
+                          :order => ["$natural", :asc]
                         })
     end
 
@@ -598,21 +621,27 @@ module MongoSolr
       return ret
     end
 
-    # Creates a new thread to dump the contents of the given collection to Solr and
+    # Creates a new thread to dump the contents of the given namespace to Solr and
     # tries to get in sync with the main thread by consuming the backlogs inserted
-    # by the main thread for the given namespace.
+    # by the main thread for the given namespace while dumping.
     #
-    # @param db_name [String] The name of the database.
-    # @param coll_name [String] The name of the collection.
+    # @param oplog_ns [String] The namespace of the collection.
     # @param wait [Boolean] Waits for the thread to finish before returning.
-    # @param block [Param] @see #add_collection_wo_lock
-    def dump_and_sync(db_name, coll_name, wait = false, &block)
-      oplog_ns = "#{db_name}.#{coll_name}"
-      @oplog_backlog[oplog_ns] = []
+    # @param &block [Proc(mode, backlog)] Extra block parameter for debugging and testing.
+    #   The mode can be :finished_dumping or :depleted_backlog, which describes on which
+    #   stage it is running on. The backlog paramereter is the array of backlogged oplog
+    #   This block will be called repeatedly during the :finished_dumping stage until the
+    #   block returns (break) a false value
+    def dump_and_sync(oplog_ns, wait = false, &block)
+      # Lock usage:
+      # 1. @oplog_backlog
+      # 2. Spawns a thread that uses @oplog_backlog
 
+      db_name, coll_name = Util.get_db_and_coll_from_ns(oplog_ns)
       db = retry_until_ok { @db_connection.db(db_name) }
 
       backlog_sync_thread = Thread.start do
+        @oplog_backlog[oplog_ns] = []
         timestamp = retry_until_ok { get_last_oplog_timestamp }
         dump_collection(db, coll_name, timestamp)
         @solr.commit
@@ -626,21 +655,7 @@ module MongoSolr
           end
         end
         
-        # Consume all oplogs that have accumulated while performing the dump and
-        # while performing this task.
-        @oplog_backlog.use do |backlog, mutex|
-          until backlog[oplog_ns].empty?
-            oplog_entries = backlog[oplog_ns]
-            backlog[oplog_ns] = []
-
-            mutex.unlock
-            update_solr(oplog_entries)
-            mutex.lock
-          end
-
-          backlog.delete(oplog_ns)
-        end
-
+        consume_backlog(oplog_ns)
         yield :depleted_backlog if block_given?
       end
 
@@ -658,51 +673,31 @@ module MongoSolr
         return
       end
 
-      oplog_coll = retry_until_ok { get_oplog_collection(@mode) }
-      docs_to_update = []
-
       # Make sure that everything before the last commit timestamp is already indexed
       # to Solr. Possible cases of having these kind of entries include:
       #
       # 1. A newly added collection/field to index was not able to completely consume
       #    its backlog.
       checkpoint_data.each do |ns, ts|
-        db_name, coll_name  = Util.get_db_and_coll_from_ns(ns)
-
-        if ts.nil? then
-          dump_and_sync(db_name, coll_name, true)
-        elsif Util.compare_bson_ts(ts, commit_ts) == -1 then
-          doc_results =
-            oplog_coll.find({ "ns" => ns,
-                              "ts" => {"$gte" => ts, "$lte" => commit_ts} }).to_a
-
-          if (ts != doc_results.shift["ts"]) then
-            # Timestamp is too old that the oplog entry for it is not available anymore
-            dump_and_sync(db_name, coll_name, true)
-          else
-            docs_to_update.concat(doc_results)
-          end
-        else
-          # No new ops since last update on Solr. Advance to the global commit timestamp.
-          @config_writer.update_timestamp(ns, commit_ts)
-        end
+        replay_oplog_and_sync(ns, ts, commit_ts, true)
       end
-
-      update_solr(docs_to_update)
     end
 
     # Convenience method for initializing the cursor for sync method. Also performs a
     # database dump when this was called for the first time.
     #
+    # @param checkpoint [MongoSolr::CheckpointData] The checkpoint data that can be used
+    #   to resume from last session. Ignored if nil.
+    #
     # @return [Mongo::Cursor] the cursor to the oplog entry, pointing to the next oplog
     #   entry to process.
-    def init_sync
+    def init_sync(checkpoint)
       cursor = nil
       last_commit = nil
 
-      unless @checkpoint.nil? then
-        restore_from_checkpoint(@checkpoint)
-        last_commit = @checkpoint.commit_ts
+      unless checkpoint.nil? then
+        restore_from_checkpoint(checkpoint)
+        last_commit = checkpoint.commit_ts
       end
 
       if last_commit.nil? then
@@ -732,6 +727,102 @@ module MongoSolr
       dump_db_contents(db_set_snapshot, timestamp)
 
       return cursor
+    end
+
+    # Attempts to extract and perform operations done within a period from the oplogs.
+    # Performs a dump if the given start timestamp is not in the oplog anymore.
+    #
+    # @param namespace [String] The name of the database.
+    # @param start_ts [BSON::Timestamp] The reference timestamp to start from.
+    # @param end_ts [BSON::Timestamp] The ending timestamp.
+    # @param wait [Boolean] @see #dump_and_sync
+    # @param &block [Proc(mode, backlog)] @see #dump_and_sync
+    def replay_oplog_and_sync(namespace, start_ts, end_ts, wait, &block)
+      # Lock usage:
+      # 1. calls dump_and_sync
+      # 2. calls update_and_sync
+
+      oplog_coll = retry_until_ok { get_oplog_collection(@mode) }
+
+      if start_ts.nil? then
+        dump_and_sync(namespace, wait, &block)
+      elsif Util.compare_bson_ts(start_ts, end_ts) == -1 then
+        result = oplog_coll.find({ "ns" => namespace,
+                                   "ts" => { "$gte" => start_ts, "$lte" => end_ts }},
+                                 { :sort => ["$natural", :asc] })
+        doc = result.next_document
+
+        if (doc.nil? or start_ts != doc["ts"]) then
+          # Timestamp is too old that the oplog entry for it is not available anymore
+          dump_and_sync(namespace, wait, &block)
+        else
+          update_and_sync(namespace, result.to_a, wait, &block)
+        end
+      else
+        # No new ops since last update on Solr. Advance to the end timestamp.
+        @config_writer.update_timestamp(namespace, end_ts)
+      end
+    end
+
+    # Creates a new thread to update the given oplog documents to Solr and tries
+    # to get in sync with the main thread by consuming the backlogs inserted by
+    # the main thread for the given namespace while updating Solr.
+    #
+    # @param namespace [String] The namespace of the oplog documents.
+    # @param docs [Array<Object>] The oplog documents. Invariant: all docs should belong
+    #   to the given namespace.
+    # @param wait [Boolean] Waits for the thread to finish before returning.
+    # @param &block [Proc(mode)] Extra block parameter for debugging and testing.
+    #   The mode can be :finished_updating or :depleted_backlog, which describes on which
+    #   stage it is running on. The backlog paramereter is the array of backlogged oplog
+    #   This block will be called repeatedly during the :finished_dumping stage until the
+    #   block returns (break) a false value.
+    def update_and_sync(namespace, docs, wait = false, &block)
+      # Lock usage:
+      # 1. @oplog_backlog
+      # 2. Spawns a thread that uses @oplog_backlog
+
+      sync_thread = Thread.start do
+        @oplog_backlog[namespace] = []
+        update_solr(docs)
+
+        # For testing/debugging only
+        if block_given? then
+          block_val = true
+
+          while block_val do
+            block_val = yield :finished_updating, @oplog_backlog[namespace]
+            # Do nothing
+          end
+        end
+
+        consume_backlog(namespace)
+        yield :depleted_backlog if block_given?        
+      end
+
+      sync_thread.join if wait
+    end
+
+    # Consumes all oplogs that have accumulated by the main thread (sync) while
+    # performing a background task.
+    #
+    # @param namespace [String] The namespace of the collection to consume.
+    def consume_backlog(namespace)
+      # Lock usage:
+      # 1. @oplog_backlog
+
+      @oplog_backlog.use do |backlog, mutex|
+        until backlog[namespace].empty?
+          oplog_entries = backlog[namespace]
+          backlog[namespace] = []
+
+          mutex.unlock
+          update_solr(oplog_entries)
+          mutex.lock
+        end
+
+        backlog.delete(namespace)
+      end
     end
   end
 end
