@@ -2,7 +2,6 @@
 
 require File.expand_path("../../test_helper", __FILE__)
 require "#{PROJ_SRC_PATH}/solr_synchronizer"
-require "fileutils"
 
 # Helper method for keep on trying to execute a block until there is no exception.
 # This is particularly helpful for waiting for the Mongo instance to finish starting up.

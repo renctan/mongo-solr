@@ -1,4 +1,6 @@
 require "test/unit"
+require "fileutils"
+
 require "rubygems"
 require "shoulda"
 require "mocha"
@@ -54,6 +56,33 @@ class MongoStarter
   def cleanup
     stop unless @pipe_io.nil?
     FileUtils.rm_rf DATA_DIR
+  end
+end
+
+class TestHelper
+  # A simple method to keep on executing the given block until it returns true.
+  #
+  # @param timeout [Float] Time limit for the retry operation fails.
+  # @param message [String] The message to diplay upon timeout.
+  # @param block [Proc] The procedure to perform. Should return true to stop retrying.
+  #
+  # @return [Boolean]
+  def self.retry_until_true(timeout, message = "", &block)
+    success = false
+    start_time = Time.now
+    
+    loop do
+      result = yield
+
+      if result then
+        success = true
+        break
+      elsif (Time.now - start_time > timeout) then
+        break
+      end
+    end
+
+    return success
   end
 end
 

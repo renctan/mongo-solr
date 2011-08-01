@@ -9,7 +9,6 @@ class SolrSynchronizerTest < Test::Unit::TestCase
   TEST_DB = "MongoSolrSynchronizerIntegrationTestDB"
   TEST_DB_2 = "#{TEST_DB}_2"
   DEFAULT_LOGGER = Logger.new("/dev/null")
-#  DEFAULT_LOGGER = Logger.new(STDOUT)
 
   context "basic" do
     setup do
