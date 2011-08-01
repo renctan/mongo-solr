@@ -85,6 +85,7 @@ module MongoSolr
 
               opt[:ns_set] = new_ns_set
               opt[:checkpt] = new_checkpoint
+              opt[:name] = url
 
               solr_sync =
                 SolrSyncThread.new(SolrSynchronizer.new(solr, mongo, config_writer, opt))
