@@ -4,10 +4,10 @@
 # Solr.
 #
 # Experimental Setup:
-# The test generates a document with 3 fields, each around 1MB in size and inserts it to
-# MongoDB. Every document insert is unique, by simply modifying certain characters among
-# one of the fields chosen randomly. The document size being inserted is fixed on the
-# entire test.
+# The test generates a document with 3 fields, each around 1MB in size (by default) and
+# inserts it to MongoDB. Every document insert is unique, by simply modifying certain
+# characters among one of the fields chosen randomly. The document size being inserted
+# is fixed on the entire test.
 #
 # The test forks a child process for the document insertion and also measures the time
 # it takes to perform the inserts while the parent process tries to perform a sync. The
@@ -15,13 +15,18 @@
 # synchronization process needs to wait for the oplog entry to appear before it can perform
 # the updates.
 
-require "stringio"
 require_relative "../proj"
+
+require "stringio"
+require "rsolr"
 require "#{PROJ_SRC_PATH}/solr_synchronizer"
 require "#{PROJ_SRC_PATH}/argument_parser"
+require "#{PROJ_SRC_PATH}/config_writer"
+require "#{PROJ_SRC_PATH}/solr_config_const"
 
 TEST_DB = "MongoSolrUpdateTestBenchmark"
 TEST_COLLECTION = "sink"
+TEST_NS = "#{TEST_DB}.#{TEST_COLLECTION}"
 DEFAULT_DOC_COUNT = 5
 
 # Extracts the command line arguments.
@@ -34,6 +39,13 @@ DEFAULT_DOC_COUNT = 5
 def parse_options(args)
   MongoSolr::ArgumentParser.parse_options(args) do |opts, options|
     options.docs = DEFAULT_DOC_COUNT
+    options.solr_server = "http://localhost:8983/solr"
+    options.field_size = 20
+
+    opts.on("-s", "--solr SERVER", "The location of the Solr server.",
+            "Defaults to #{options.solr_server}") do |server|
+      options.solr_server = server
+    end
 
     opts.separator ""
     opts.on("--doc_count COUNT", Integer,
@@ -41,19 +53,28 @@ def parse_options(args)
             "the test. Defaults to #{options.docs}.") do |num|
       options.docs = num
     end
+
+    opts.separator ""
+    opts.on("--field_size COUNT", Integer,
+            "The size of the strings to insert per",
+            "field in number of bits. Defaults to #{options.field_size}.") do |num|
+      options.field_size = num
+    end
   end
 end
 
 # A simple class that creates a document with large randomly generated strings.
 class RandomDocGen
-  def initialize
+  def initialize(field_size_bit_count)
+    @field_size = 2**field_size_bit_count
+
     @doc = {
       DELETE_THIS_KEY => DELETE_THIS_VALUE,
       "trash" => {
-        "random gibberish" => rand_string(ONE_MB),
-        "misc garbage" => rand_string(ONE_MB)
+        "random gibberish" => rand_string(@field_size),
+        "misc garbage" => rand_string(@field_size)
       },
-      "other" => rand_string(ONE_MB)
+      "other" => rand_string(@field_size)
     }
   end
 
@@ -74,13 +95,12 @@ class RandomDocGen
           else @doc["other"]
           end
 
-    mutate_string(str, 10, ONE_MB)
+    mutate_string(str, 10, @field_size)
     return @doc
   end
 
   ######################################################
   private
-  ONE_MB = 2**20
   # Subset of readable ASCII characters with some amount of space scattered around to
   # increase chances of having spaces
   READABLE_CHARS = "1234567890 abcdefghijklm nopqrstuvwxyz ABCDEFGHIJKLM NOPQRSTUVWXYZ " +
@@ -123,18 +143,34 @@ end
 if $0 == __FILE__ then
   options = parse_options(ARGV)
   mongo = Mongo::Connection.new(options.mongo_loc, options.mongo_port)
-  solr_client = RSolr.connect(:url => options.solr_server)
+  solr_loc = options.solr_server
+
+  solr_client = RSolr.connect(:url => solr_loc)
   max_doc = options.docs
-  doc_gen = RandomDocGen.new
+  doc_gen = RandomDocGen.new(options.field_size)
+
+  config_coll = mongo[TEST_DB]["msolr"]
+  config_coll.insert({ MongoSolr::SolrConfigConst::SOLR_URL_KEY => solr_loc,
+                       MongoSolr::SolrConfigConst::NS_KEY => TEST_NS })
+  config_writer = MongoSolr::ConfigWriter.new(solr_loc, config_coll)
 
   # Variables used inside sync block
   pid = nil
   start_time = nil
 
-  solr = MongoSolr::SolrSynchronizer.new(solr_client, mongo, options.mode)
-  solr.logger = Logger.new("/dev/null")
-  solr.sync({ :interval => options.interval,
-              :db_pass => options.auth }) do |mode, doc_count|
+  opt = {
+    :mode => options.mode,
+    :err_retry_interval => options.err_interval,
+    :auto_dump => options.auto_dump,
+    :interval => options.interval,
+    :logger => Logger.new("/dev/null"),
+    :ns_set => { TEST_NS => {} }
+  }
+
+  docs_indexed = 0
+
+  solr = MongoSolr::SolrSynchronizer.new(solr_client, mongo, config_writer, opt)
+  solr.sync do |mode, doc_count|
     if mode == :finished_dumping then
       start_time = Time.now
 
@@ -147,10 +183,15 @@ if $0 == __FILE__ then
         puts "It took child process #{doc_insert_end_time - start_time}" +
           " secs to finish inserting the docs."
       end
-    elsif mode == :sync and !(doc_count < max_doc) then
-      end_time = Time.now
-      puts "It took #{end_time - start_time} secs to update #{doc_count} inserts."
-      break
+    elsif mode == :sync then
+      # Note: doc_count is just the count of docs inserted for the batch
+      docs_indexed += doc_count
+
+      if !(docs_indexed < max_doc) then
+        end_time = Time.now
+        puts "It took #{end_time - start_time} secs to index #{docs_indexed} docs."
+        break
+      end
     end
   end
 
