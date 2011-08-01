@@ -12,7 +12,7 @@
  *   configuration collection for mongo-solr
  */
 var MSolr = function ( configDBName, configCollName ){
-  var conn = new Mongo();
+  var conn = db.getMongo();
   var dbName = configDBName || MSolr.getConfigDBName( conn );
   var collName = configCollName || MSolrConst.CONFIG_COLLECTION_NAME;
   var ensureIdxCriteria = {};
