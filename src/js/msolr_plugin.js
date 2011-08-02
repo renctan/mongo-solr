@@ -6,6 +6,10 @@ MSolr.SERVER = null;
  * @param {String} location The location of the server.
  */
 MSolr.connect = function ( location ) {
+  if ( location == null ) {
+    location = "http://localhost:8983/solr";
+  }
+
   MSolr.SERVER = location;
 };
 
