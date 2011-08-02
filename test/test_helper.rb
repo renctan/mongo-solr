@@ -62,12 +62,11 @@ end
 class TestHelper
   # A simple method to keep on executing the given block until it returns true.
   #
-  # @param timeout [Float] Time limit for the retry operation fails.
-  # @param message [String] The message to diplay upon timeout.
+  # @param timeout [Float] Time limit before the retry operation fails.
   # @param block [Proc] The procedure to perform. Should return true to stop retrying.
   #
-  # @return [Boolean]
-  def self.retry_until_true(timeout, message = "", &block)
+  # @return [Boolean] true if the block returns true before the timeout elapses.
+  def self.retry_until_true(timeout, &block)
     success = false
     start_time = Time.now
     
