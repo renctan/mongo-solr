@@ -5,6 +5,8 @@ require "rsolr"
 
 # Simple test cases for testing the MongoSolr daemon and the mongo shell plugin.
 class SmokeTest < Test::Unit::TestCase
+  include TestHelper
+
   TEST_DB = "smoke_test"
   SOLR_TEST_KEY = "MongoSolr_slowTest_smokeTest"
   SOLR_TEST_VALUE = "delete_me"
@@ -53,27 +55,14 @@ JAVASCRIPT
     run_js(escape_js(code))
   end
 
-  # Run the Mongo-Solr daemon and terminate it.
-  #
-  # @param block [Proc] The procedure to execute before terminating the daemon.
-  def run_daemon(&block)
-    daemon_pio = IO.popen("ruby #{PROJ_SRC_PATH}/../mongo_solr.rb" +
-                          " -p #{MongoStarter::PORT} 2> /dev/null")
-
-    begin
-      yield if block_given?
-    ensure
-      Process.kill "TERM", daemon_pio.pid
-      daemon_pio.close
-    end
-  end
-
   # @return [Object] a document template that will be used in every test.
   def default_doc
     { SOLR_TEST_KEY => SOLR_TEST_VALUE }
   end
 
   context "daemon" do
+    DAEMON_ARGS = "-p #{MongoStarter::PORT}"
+
     setup do
       @mongo = MongoStarter.new
       @mongo.start
@@ -101,12 +90,12 @@ JAVASCRIPT
       index_to_solr(TEST_DB, @test_coll.name)
       @test_coll.insert(default_doc.merge({ :x => "hello" }), { :safe => true })
 
-      run_daemon do
+      run_daemon(DAEMON_ARGS) do
         solr_doc = nil
 
         # This block is just for synchronization purposes and is used to make
         # sure that the daemon has already passed the dumping stage.
-        result = TestHelper.retry_until_true(TIMEOUT) do
+        result = retry_until_true(TIMEOUT) do
           response = @solr.select({ :params => { :q => SOLR_TEST_Q }})
           solr_doc = response["response"]["docs"].first
           not solr_doc.nil?
@@ -121,12 +110,12 @@ JAVASCRIPT
       index_to_solr(TEST_DB, @test_coll.name)
       @test_coll.insert(default_doc.merge({ :x => "hello" }), { :safe => true })
 
-      run_daemon do
+      run_daemon(DAEMON_ARGS) do
         solr_doc = nil
 
         # This block is just for synchronization purposes and is used to make
         # sure that the daemon has already passed the dumping stage.
-        result = TestHelper.retry_until_true(TIMEOUT) do
+        result = retry_until_true(TIMEOUT) do
           response = @solr.select({ :params => { :q => SOLR_TEST_Q }})
           solr_doc = response["response"]["docs"].first
           not solr_doc.nil?
@@ -137,7 +126,7 @@ JAVASCRIPT
         query = SOLR_TEST_Q + " AND y:why"
         @test_coll.insert(default_doc.merge({ :y => "why" }), { :safe => true })
 
-        result = TestHelper.retry_until_true(TIMEOUT) do
+        result = retry_until_true(TIMEOUT) do
           response = @solr.select({ :params => { :q => query }})
           solr_doc = response["response"]["docs"].first
           not solr_doc.nil?
@@ -151,12 +140,12 @@ JAVASCRIPT
       index_to_solr(TEST_DB, @test_coll.name)
       @test_coll.insert(default_doc.merge({ :x => "hello" }), { :safe => true })
 
-      run_daemon do
+      run_daemon(DAEMON_ARGS) do
         solr_doc = nil
 
         # This block is just for synchronization purposes and is used to make
         # sure that the daemon has already passed the dumping stage.
-        result = TestHelper.retry_until_true(TIMEOUT) do
+        result = retry_until_true(TIMEOUT) do
           response = @solr.select({ :params => { :q => SOLR_TEST_Q }})
           solr_doc = response["response"]["docs"].first
           not solr_doc.nil?
@@ -170,7 +159,7 @@ JAVASCRIPT
         index_to_solr(coll.db.name)
         query = SOLR_TEST_Q + " AND z:Zeta"
 
-        result = TestHelper.retry_until_true(TIMEOUT) do
+        result = retry_until_true(TIMEOUT) do
           response = @solr.select({ :params => { :q => query }})
           solr_doc = response["response"]["docs"].first
           not solr_doc.nil?

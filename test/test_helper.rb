@@ -59,14 +59,14 @@ class MongoStarter
   end
 end
 
-class TestHelper
+module TestHelper
   # A simple method to keep on executing the given block until it returns true.
   #
   # @param timeout [Float] Time limit before the retry operation fails.
   # @param block [Proc] The procedure to perform. Should return true to stop retrying.
   #
   # @return [Boolean] true if the block returns true before the timeout elapses.
-  def self.retry_until_true(timeout, &block)
+  def retry_until_true(timeout, &block)
     success = false
     start_time = Time.now
     
@@ -82,6 +82,21 @@ class TestHelper
     end
 
     return success
+  end
+
+  # Run the Mongo-Solr daemon and terminate it.
+  #
+  # @param args [String] The arguments to pass to the daemon.
+  # @param block [Proc] The procedure to execute before terminating the daemon.
+  def run_daemon(args = "", &block)
+    daemon_pio = IO.popen("ruby #{PROJ_SRC_PATH}/../mongo_solr.rb #{args} 2> /dev/null")
+
+    begin
+      yield if block_given?
+    ensure
+      Process.kill "TERM", daemon_pio.pid
+      daemon_pio.close
+    end
   end
 end
 
