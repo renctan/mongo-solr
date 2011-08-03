@@ -37,6 +37,8 @@ MSolr.getConfigDBName = function ( mongo ) {
   var configDBFound = false;
   var ret = "config";
 
+  // Always use config since local db is not replicated to secondaries
+/*
   dbList = mongo.getDBs().databases;
   for ( var x = dbList.length; x--; ) {
     if ( dbList[x].name == "config" ) {
@@ -48,7 +50,7 @@ MSolr.getConfigDBName = function ( mongo ) {
   if ( ! configDBFound ) {
     ret = "local";
   }
-
+*/
   return ret;
 };
 

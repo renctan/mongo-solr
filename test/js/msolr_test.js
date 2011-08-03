@@ -67,6 +67,7 @@ MSolrTest.prototype.getConfigIfAvailableTest = function () {
   assert.eq( "config", MSolr.getConfigDBName( mockMongo ));
 };
 
+/*
 MSolrTest.prototype.getLocalIfConfigNotFoundTest = function () {
   var mockMongo = {
     getDBs: function () {
@@ -89,6 +90,7 @@ MSolrTest.prototype.getLocalIfConfigNotFoundTest = function () {
 
   assert.eq( "local", MSolr.getConfigDBName( mockMongo ) );
 };
+*/
 
 MSolrTest.prototype.basicChangeUrlTest = function () {
   var doc;
