@@ -51,11 +51,8 @@ module MongoSolr
     #
     # @return [String] the name of the database that contains the config information.
     def self.get_config_db_name(conn)
-      if conn.database_names.include? "config" then
-        return "config"
-      else
-        return "local"
-      end
+      # Make it always return config since local is not replicated to secondaries
+      return "config"
     end
   end
 end

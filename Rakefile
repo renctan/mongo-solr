@@ -43,7 +43,7 @@ end
 
 file "solr.js" do
   # Note: sequence is relevant. Dependent files should be placed before files it depend.
-  js_files = %w[msolr_const msolr_server msolr]
+  js_files = %w[msolr_const util msolr_server msolr]
   js_opt_arr = js_files.map { |file| "--js=src/js/#{file}.js" }
   js_opt_str = js_opt_arr.join(" ")
 
