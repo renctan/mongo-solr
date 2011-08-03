@@ -1,10 +1,21 @@
 /**
  * Creates a simple class that represents a Solr Server configuration.
  * 
- * @param {Collection} configColl The collection that contains the configuration info.
+ * @param {DBCollection} configColl The collection that contains the configuration info.
  * @param {String} loc The location of the Solr Server.
+ * @param {Object} opt An optional object for specifying extra parameters. Recognized keys:
+ * 
+ *   {integer} repCount The number of servers to wait for a write operation to get
+ *      replicated to.
+ *   {integer} timeout The number of milliseconds to wait before repCount is satisfied.
+ * 
  */
-var MSolrServer = function ( configColl, loc ) {
+var MSolrServer = function ( configColl, loc, opt ) {
+  opt = opt || {};
+
+  this.repCount = opt.repCount || 1;
+  this.timeout = opt.timeout || 1000;
+
   this.configColl = configColl;
   this.configDB = configColl.getDB();
   this.loc = loc;
@@ -15,18 +26,17 @@ var MSolrServer = function ( configColl, loc ) {
  * 
  * @param name {String} Name of the database or namespace to index to Solr.
  * @param fields Not yet supported
- * @param {Boolean} [wait = false] Wait till the operation completes before returning.
- * 
+ *
  * Ex:
  * server.index( "test" ); // Sets all collections under the test DB for indexing.
  * server.index( "test.user"); // Sets the user collection for indexing.
  */
-MSolrServer.prototype.index = function ( name, fields, wait ) {
+MSolrServer.prototype.index = function ( name, fields ) {
   if ( name.indexOf(".") == -1 ) {
-    this._indexByDB( name, wait );
+    this._indexByDB( name );
   }
   else {
-    this._indexByNS( name, fields, wait );
+    this._indexByNS( name, fields );
   }
 };
 
@@ -35,18 +45,17 @@ MSolrServer.prototype.index = function ( name, fields, wait ) {
  * 
  * @param name {String} Name of the database or namespace to index to Solr.
  * @param fields Not yet supported
- * @param {Boolean} [wait = false] Wait till the operation completes before returning.
  * 
  * Ex:
  * server.remove( "test" ); // Removes all collections under the test DB from indexing.
  * server.remove( "test.user"); // Removes the user collection from indexing.
  */
-MSolrServer.prototype.remove = function ( name, fields, wait ) {
+MSolrServer.prototype.remove = function ( name, fields ) {
   if ( name.indexOf(".") == -1 ) {
-    this._removeByDB( name, wait );
+    this._removeByDB( name );
   }
   else {
-    this._removeByNS( name, fields, wait );
+    this._removeByNS( name, fields );
   }
 };
 
@@ -54,11 +63,9 @@ MSolrServer.prototype.remove = function ( name, fields, wait ) {
  * Add all collections under this database for indexing.
  * 
  * @param {String} dbName The name of the database.
- * @param {Boolean} [wait = false] Wait till the operation completes before returning.
  */
-MSolrServer.prototype._indexByDB = function ( dbName, wait ){
+MSolrServer.prototype._indexByDB = function ( dbName ){
   var collNames = this.configColl.getMongo().getDB(dbName).getCollectionNames();
-  var doWait = wait || false;
   var coll;
 
   for ( var x = collNames.length; x--; ) {
@@ -69,9 +76,7 @@ MSolrServer.prototype._indexByDB = function ( dbName, wait ){
     }
   }
 
-  if ( doWait ) {
-    this.configDB.getLastError();
-  }
+  MSolrUtil.getLastError( this.configDB, this.repCount, this.timeout );
 };
 
 /**
@@ -88,10 +93,7 @@ MSolrServer.prototype._removeByDB = function ( dbName, wait ) {
   criteria[MSolrConst.SOLR_URL_KEY] = this.loc;
   criteria[MSolrConst.NS_KEY] = dbRegexPattern;
   this.configColl.remove( criteria );
-
-  if ( doWait ) {
-    this.configDB.getLastError();
-  }
+  MSolrUtil.getLastError( this.configDB, this.repCount, this.timeout );
 };
 
 /**
@@ -100,10 +102,8 @@ MSolrServer.prototype._removeByDB = function ( dbName, wait ) {
  * 
  * @param {String} ns The namespace of the collection to index.
  * @param {String} [field = null] The name of the specific field to index. (Not yet supported)
- * @param {Boolean} [wait = false] Wait till the operation completes before returning.
  */
-MSolrServer.prototype._indexByNS = function ( ns, field, wait ){
-  var doWait = wait || false;
+MSolrServer.prototype._indexByNS = function ( ns, field ){
   var updateDoc = {};
   var fieldDoc = {};
   var criteria = {};
@@ -117,30 +117,22 @@ MSolrServer.prototype._indexByNS = function ( ns, field, wait ){
   }
 
   this.configColl.update( criteria, { $set: updateDoc }, true );
-
-  if ( doWait ) {
-    this.configDB.getLastError();
-  }
+  MSolrUtil.getLastError( this.configDB, this.repCount, this.timeout );
 };
 
 /**
  * Removes a collection from being indexed.
  * 
  * @param {String} ns The namespace of the collection to remove.
- * @param {Boolean} [wait = false] Wait till the operation completes before returning.
  */
 MSolrServer.prototype._removeByNS = function ( ns, wait ){
   var criteria = {};
-  var doWait = wait || false;
 
   criteria[MSolrConst.SOLR_URL_KEY] = this.loc;
   criteria[MSolrConst.NS_KEY] = ns;
 
   this.configColl.remove( criteria );
-
-  if ( doWait ) {
-    this.configDB.getLastError();
-  }
+  MSolrUtil.getLastError( this.configDB, this.repCount, this.timeout );
 };
 
 MSolrServer.prototype.toString = function ( ) {

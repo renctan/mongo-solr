@@ -7,6 +7,7 @@
 var pathPrefix = "../../src/js/";
 
 load(pathPrefix + "msolr_const.js");
+load(pathPrefix + "util.js");
 load(pathPrefix + "msolr_server.js");
 load(pathPrefix + "msolr.js");
 load("../jstester.js");
@@ -97,7 +98,7 @@ MSolrTest.prototype.basicChangeUrlTest = function () {
 
   // Needs to index something before a server config entry can appear
   this.msolr.server( SOLR_SERVER1_LOC ).index( "dummy.coll" );
-  this.msolr.changeUrl( SOLR_SERVER1_LOC, SOLR_SERVER2_LOC, true );
+  this.msolr.changeUrl( SOLR_SERVER1_LOC, SOLR_SERVER2_LOC );
 
   doc = this.configColl.findOne();
   assert.eq( SOLR_SERVER2_LOC, doc[MSolrConst.SOLR_URL_KEY] );
@@ -109,7 +110,7 @@ MSolrTest.prototype.changeUrlWithNonExistingOriginalUrlTest = function () {
 
   // Needs to index something before a server config entry can appear
   this.msolr.server( SOLR_SERVER1_LOC ).index( "dummy.coll" );
-  this.msolr.changeUrl( SOLR_SERVER2_LOC, "Hilfe", true );
+  this.msolr.changeUrl( SOLR_SERVER2_LOC, "Hilfe" );
 
   cursor = this.configColl.find();
   cursor.forEach( function ( doc ) {
@@ -124,7 +125,7 @@ MSolrTest.prototype.removeServerTest = function () {
 
   // Needs to index something before a server config entry can appear
   this.msolr.server( SOLR_SERVER1_LOC ).index( "dummy.coll" );
-  this.msolr.removeServer( SOLR_SERVER1_LOC, true );
+  this.msolr.removeServer( SOLR_SERVER1_LOC );
 
   serverConfigCriteria[MSolrConst.SOLR_URL_KEY] = SOLR_SERVER1_LOC;
   doc = this.configColl.findOne( serverConfigCriteria );
@@ -137,7 +138,7 @@ MSolrTest.prototype.removeServerWithTwoServersTest = function () {
 
   this.msolr.server( SOLR_SERVER1_LOC ).index( "dummy.coll" );
   this.msolr.server( SOLR_SERVER2_LOC ).index( "dummy2.coll" );
-  this.msolr.removeServer( SOLR_SERVER1_LOC, true );
+  this.msolr.removeServer( SOLR_SERVER1_LOC );
 
   cursor = this.configColl.find();
   cursor.forEach( function ( doc ) { // There should be only one result

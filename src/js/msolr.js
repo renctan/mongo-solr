@@ -4,26 +4,46 @@
  */
 
 /**
- * Creates a simple class that is connected to the mongo-solr configuration server.
- * 
- * @param {string} configDBName Optional parameter for specifying the name of the
- *   configuration database for mongo-solr
- * @param {string} configCollName Optional parameter for specifying the name of the
- *   configuration collection for mongo-solr
- */
+* Creates a simple class that is connected to the mongo-solr configuration server.
+*
+* @param {string} configDBName Optional parameter for specifying the name of the
+* configuration database for mongo-solr
+* @param {string} configCollName Optional parameter for specifying the name of the
+* configuration collection for mongo-solr
+*/
 var MSolr = function ( configDBName, configCollName ){
   var conn = db.getMongo();
   var dbName = configDBName || MSolr.getConfigDBName( conn );
   var collName = configCollName || MSolrConst.CONFIG_COLLECTION_NAME;
   var ensureIdxCriteria = {};
+  var rsStat = rs.status();
+  var members = 0;
+  var memberList;
 
   this.db = conn.getDB( dbName );
   this.coll = this.db.getCollection( collName );
   ensureIdxCriteria[MSolrConst.SOLR_URL_KEY] = 1;
   ensureIdxCriteria[MSolrConst.NS_KEY] = 1;
 
+  if ( rsStat.errmsg == null ) {
+    memberList = rsStat.members;
+
+    for ( var i = memberList.length; i--; ) {
+      if ( memberList[i].state == 1 || memberList[i].state == 2 ) {
+        members++;
+      }
+    }
+
+    this.repCount = members;
+  }
+  else {
+    this.repCount = 1;
+  }
+
   this.coll.ensureIndex( ensureIdxCriteria, { "unique": true } );
 };
+
+MSolr._wtimeout = 2000; // 2 sec
 
 /**
  * Determines which database to use when storing the configuration information.
@@ -69,38 +89,30 @@ MSolr.prototype.showConfig = function () {
  * 
  * @param {String} originalUrl The original url.
  * @param {String} newUrl The new url.
- * @param {Boolean} [wait = false] Wait till the operation completes before returning.
  */
-MSolr.prototype.changeUrl = function ( originalUrl, newUrl, wait ) {
+MSolr.prototype.changeUrl = function ( originalUrl, newUrl ) {
   var criteria = {};
   var docField = {};
-  var doWait = wait || false;
 
   criteria[MSolrConst.SOLR_URL_KEY] = originalUrl;
   docField[MSolrConst.SOLR_URL_KEY] = newUrl;
   this.coll.update( criteria, { $set: docField } );
 
-  if ( doWait ) {
-    this.db.getLastError();
-  }
+  MSolrUtil.getLastError( this.db, this.repCount, MSolr._wtimeout );
 };
 
 /**
  * Deletes the server configuration.
  * 
  * @param {String} location The location of the server.
- * @param {Boolean} [wait = false] Wait till the operation completes before returning.
  */
-MSolr.prototype.removeServer = function ( location, wait ) {
+MSolr.prototype.removeServer = function ( location ) {
   var criteria = {};
-  var doWait = wait || false;
 
   criteria[MSolrConst.SOLR_URL_KEY] = location;
   this.coll.remove( criteria );
 
-  if ( doWait ) {
-    this.db.getLastError();
-  }
+  MSolrUtil.getLastError( this.db, this.repCount, MSolr._wtimeout );
 };
 
 /**
@@ -111,7 +123,12 @@ MSolr.prototype.removeServer = function ( location, wait ) {
  * @return {MSolrServer} the server object.
  */
 MSolr.prototype.server = function ( location ) {
-  return new MSolrServer( this.coll, location );
+  var opt = {
+    repCount: this.repCount,
+    timeout: MSolr._wtimeout
+  };
+
+  return new MSolrServer( this.coll, location, opt );
 };
 
 /**

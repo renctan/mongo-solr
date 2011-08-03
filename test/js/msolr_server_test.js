@@ -7,6 +7,7 @@
 var pathPrefix = "../../src/js/";
 
 load(pathPrefix + "msolr_const.js");
+load(pathPrefix + "util.js");
 load(pathPrefix + "msolr_server.js");
 load(pathPrefix + "msolr.js");
 load("../jstester.js");
@@ -113,8 +114,8 @@ MSolrServerTest.prototype.teardown = function () {
 MSolrServerTest.prototype.removeDBwithOneDBExistingTest = function () {
   var criteria = {};
 
-  this.solr.index( TEST_DB_1.name, null, true );
-  this.solr.remove( TEST_DB_1.name, null, true );
+  this.solr.index( TEST_DB_1.name, null );
+  this.solr.remove( TEST_DB_1.name, null );
 
   assert.eq( 0, this.configColl.count() );
 };
@@ -122,9 +123,9 @@ MSolrServerTest.prototype.removeDBwithOneDBExistingTest = function () {
 MSolrServerTest.prototype.removeDBwithTwoDBExistingTest = function () {
   this.solr.index( TEST_DB_1.name );
   // Index a dummy collection
-  this.solr.index( TEST_DB_2.name + ".dummy", null, true );
+  this.solr.index( TEST_DB_2.name + ".dummy", null );
 
-  this.solr.remove( TEST_DB_1.name, null, true );
+  this.solr.remove( TEST_DB_1.name, null );
 
   this.configColl.find( this.serverConfigCriteria ).forEach( function ( doc ) {
     // Only expecting one result
@@ -136,7 +137,7 @@ MSolrServerTest.prototype.indexUsingDbNameShouldIncludeAllCollectionTest = funct
   var resultCount = 0;
   var testColl = TEST_DB_1.coll;
 
-  this.solr.index( TEST_DB_1.name, null, true );
+  this.solr.index( TEST_DB_1.name, null );
 
   this.configColl.find( this.serverConfigCriteria ).forEach( function ( doc ) {
     var collName = extractCollName( doc[MSolrConst.NS_KEY] );
@@ -151,7 +152,7 @@ MSolrServerTest.prototype.indexUsingDbNameShouldNotIncludeSystemCollectionTest =
   var testColl = TEST_DB_2.coll;
   var resultCount = 0;
 
-  this.solr.index( TEST_DB_2.name, null, true );
+  this.solr.index( TEST_DB_2.name, null );
 
   this.configColl.find( this.serverConfigCriteria ).forEach( function ( doc ) {
     var collName = extractCollName( doc[MSolrConst.NS_KEY] );
@@ -166,7 +167,7 @@ MSolrServerTest.prototype.indexUsingDbNameShouldNotIncludeSystemCollectionTest =
 MSolrServerTest.prototype.indexUsingDbNameShouldProperlySetDottedCollectionNamesTest = function () {
   var ns = TEST_DB_3.name + "." + TEST_DB_3.coll[0];
 
-  this.solr.index( TEST_DB_3.name, null, true );
+  this.solr.index( TEST_DB_3.name, null );
 
   this.configColl.find( this.serverConfigCriteria ).forEach( function ( doc ) {
     // Expecting only a single result
@@ -177,7 +178,7 @@ MSolrServerTest.prototype.indexUsingDbNameShouldProperlySetDottedCollectionNames
 MSolrServerTest.prototype.indexShouldAddOneCollectionTest = function () {
   var ns = TEST_DB_1.name + ".qwerty";
 
-  this.solr.index( ns, null, true );
+  this.solr.index( ns, null );
   this.configColl.find( this.serverConfigCriteria ).forEach( function ( doc ) {
     // Expecting only a single result
     assert.eq( ns, doc[MSolrConst.NS_KEY] );
@@ -188,8 +189,8 @@ MSolrServerTest.prototype.removeIndexTest = function () {
   var criteria = {};
   var ns = TEST_DB_1.name + ".qwerty";
 
-  this.solr.index( ns, null, true );
-  this.solr.remove( ns, null, true );
+  this.solr.index( ns, null );
+  this.solr.remove( ns, null );
 
   criteria[MSolrConst.SOLR_SERVER_LOC] = SOLR_SERVER_LOC;
   criteria[MSolrConst.NS_KEY] = ns;
