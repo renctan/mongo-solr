@@ -10,6 +10,7 @@ Please check out the wiki for more details about this project.
 * Periodically sets checkpoints and automatically resumes from them.
 * Includes a client plugin for Mongo shell.
 * Supports indexing to multiple Solr Servers.
+* Supports connection to a replica set instance.
 
 # Ruby version
 
