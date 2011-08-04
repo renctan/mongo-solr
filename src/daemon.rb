@@ -105,7 +105,7 @@ module MongoSolr
 
           solr_sync_set = new_solr_sync_set
           sleep config_poll_interval # Check the config settings again later
-        rescue StaleCursorException
+        rescue OplogException, StaleCursorException
           raise
         rescue => e
           logger.error get_full_exception_msg(e)

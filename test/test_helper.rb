@@ -18,7 +18,7 @@ end
 
 require_relative "proj"
 
-# Simple class for starting and stopping the mongod process.
+# Simple class for starting and stopping a master/slave mongod process.
 #
 # Assumptions:
 # 1. No other process is using port 27018

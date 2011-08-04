@@ -258,13 +258,14 @@ JAVASCRIPT
           retry
         end
 
-        result = retry_until_true(2 * TIMEOUT) do
+        rs_timeout = 2 * TIMEOUT
+        result = retry_until_true(rs_timeout) do
           response = @solr.select({ :params => { :q => query }})
           solr_doc = response["response"]["docs"].first
           not solr_doc.nil?
         end
 
-        assert(result, "Failed to update Solr within #{TIMEOUT} seconds")
+        assert(result, "Failed to update Solr within #{rs_timeout} seconds")
       end
     end
   end

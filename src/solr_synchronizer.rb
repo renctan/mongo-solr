@@ -401,7 +401,7 @@ module MongoSolr
         rescue OplogException
           # Do nothing
         end
-
+ 
         begin
           candidate_coll << get_oplog_collection(:repl_set)
         rescue OplogException
@@ -416,11 +416,10 @@ module MongoSolr
           oplog_coll = candidate_coll.first
         end
       else
-        begin
-          oplog_db.validate_collection(oplog_collection_name)
-        rescue Mongo::MongoDBError
-          raise OplogException, OPLOG_NOT_FOUND_MSG
-        end
+        reply = oplog_db.command({ :collStats => oplog_collection_name },
+                                 { :check_response => false })
+
+        raise OplogException, OPLOG_NOT_FOUND_MSG unless reply["errmsg"].nil?
 
         oplog_coll = oplog_db.collection(oplog_collection_name)
       end
@@ -534,6 +533,8 @@ module MongoSolr
     def retry_until_ok(&block)
       begin
         yield block
+      rescue OplogException, StaleCursorException
+        raise
       rescue => e
         @logger.error "#{@name}: #{get_full_exception_msg(e)}"
         sleep @err_retry_interval
