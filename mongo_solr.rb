@@ -38,6 +38,10 @@ if $0 == __FILE__ then
 
   authenticate_to_db(mongo, options.auth)
 
+  if mongo.is_a? Mongo::ReplSetConnection then
+    puts "Connected to a replica set @ #{mongo.host}:#{mongo.port}"
+  end
+
   logger = Logger.new(STDOUT)
 
   config_db_name = MongoDBConfigSource.get_config_db_name(mongo)
