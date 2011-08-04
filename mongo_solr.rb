@@ -33,7 +33,7 @@ if $0 == __FILE__ then
   if (mongo_loc =~ /^mongodb:\/\//) then
     mongo = Mongo::Connection.from_uri(mongo_loc)
   else
-    mongo = Mongo::Connection.new(mongo_loc, options.mongo_port)
+    mongo = auto_detect_replset(mongo_loc, options.mongo_port)
   end
 
   authenticate_to_db(mongo, options.auth)

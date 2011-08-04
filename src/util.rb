@@ -93,6 +93,34 @@ module MongoSolr
 
       return db_name, collection_name
     end
+
+    # Attempts to check whether the connection is to a replica set.
+    #
+    # @param hostname [String] The hostname of the mongod instance to connect to.
+    # @param port [Number] The port number of the mongod instance to connect to.
+    #
+    # @return [Mongo::Connection, Mongo::ReplSetConnection] the a replica set connection
+    #   if the given host is a replica set member or a normal connection otherwise.
+    def auto_detect_replset(hostname, port)
+      mongo = Mongo::Connection.new(hostname, port)
+
+      begin
+        stat = mongo["admin"].command({ :replSetGetStatus => 1 })
+        member_list = stat["members"].map do |member|
+          host, port = member["name"].split(":")
+          [host, port.to_i]
+        end
+
+        args = member_list
+        args << { :rs_name => stat["set"] }
+
+        mongo = Mongo::ReplSetConnection.new(*args)
+      rescue Mongo::OperationFailure => e
+        raise unless e.message =~ /--replSet/i
+      end
+
+      return mongo
+    end
   end
 end
 
