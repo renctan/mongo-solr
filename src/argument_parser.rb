@@ -30,6 +30,8 @@ module MongoSolr
 
         opts.separator ""
         opts.on("-d", "--mloc SERVER", "The location of the MongoDB server.",
+                "The mongo connection string can also be specified here.",
+                "(http://www.mongodb.org/display/DOCS/Connections)",
                 "Defaults to #{options.mongo_loc}.") do |server|
           options.mongo_loc = server
         end

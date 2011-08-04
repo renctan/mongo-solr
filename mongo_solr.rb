@@ -27,7 +27,14 @@ if $0 == __FILE__ then
   include MongoSolr
 
   options = ArgumentParser.parse_options(ARGV)
-  mongo = Mongo::Connection.new(options.mongo_loc, options.mongo_port)
+
+  mongo_loc = options.mongo_loc
+  if (mongo_loc =~ /^mongodb:\/\//) then
+    mongo = Mongo::Connection.from_uri(mongo_loc)
+  else
+    mongo = Mongo::Connection.new(mongo_loc, options.mongo_port)
+  end
+
   Util.authenticate_to_db(mongo, options.auth)
 
   logger = Logger.new(STDOUT)

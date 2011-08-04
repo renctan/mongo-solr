@@ -179,5 +179,94 @@ JAVASCRIPT
                  "Encountered error while executing js:\n#{out}")
     end
   end
+
+  context "replica sets" do
+    setup do
+      @rs = ReplSetManager.new({ :arbiter_count => 0,
+                                 :secondary_count => 2,
+                                 :passive_count => 0
+                               })
+      @rs.start_set
+
+      @conn_str = "mongodb://#{@rs.host}:#{@rs.ports[0]},#{@rs.host}:#{@rs.ports[1]}"
+      @mongo = Mongo::ReplSetConnection.new([@rs.host, @rs.ports[0]])
+      @test_coll = @mongo[TEST_DB]["test"]
+      @solr = RSolr.connect
+      @js = JSPluginWrapper.new(@rs.host, @rs.ports[0])
+    end
+
+    teardown do
+      @solr.delete_by_query(SOLR_TEST_Q)
+      @solr.commit
+      @rs.cleanup_set
+    end
+
+    should "update with normal rs" do
+      @js.index_to_solr(TEST_DB, @test_coll.name)
+      @test_coll.insert(default_doc.merge({ :x => "hello" }), { :safe => true })
+
+      run_daemon("-d #{@conn_str}") do
+        solr_doc = nil
+
+        # This block is just for synchronization purposes and is used to make
+        # sure that the daemon has already passed the dumping stage.
+        result = retry_until_true(TIMEOUT) do
+          response = @solr.select({ :params => { :q => SOLR_TEST_Q }})
+          solr_doc = response["response"]["docs"].first
+          not solr_doc.nil?
+        end
+
+        assert(result, "Failed to index to Solr within #{TIMEOUT} seconds")
+
+        query = SOLR_TEST_Q + " AND y:why"
+        @test_coll.insert(default_doc.merge({ :y => "why" }), { :safe => true })
+
+        result = retry_until_true(TIMEOUT) do
+          response = @solr.select({ :params => { :q => query }})
+          solr_doc = response["response"]["docs"].first
+          not solr_doc.nil?
+        end
+
+        assert(result, "Failed to update Solr within #{TIMEOUT} seconds")
+      end
+    end
+
+    should "be able to update after current primary steps down" do
+      @js.index_to_solr(TEST_DB, @test_coll.name)
+      @test_coll.insert(default_doc.merge({ :x => "hello" }), { :safe => true })
+
+      run_daemon("-d #{@conn_str}") do
+        solr_doc = nil
+
+        # This block is just for synchronization purposes and is used to make
+        # sure that the daemon has already passed the dumping stage.
+        result = retry_until_true(TIMEOUT) do
+          response = @solr.select({ :params => { :q => SOLR_TEST_Q }})
+          solr_doc = response["response"]["docs"].first
+          not solr_doc.nil?
+        end
+
+        assert(result, "Failed to index to Solr within #{TIMEOUT} seconds")
+
+        @rs.step_down_primary
+
+        query = SOLR_TEST_Q + " AND y:why"
+
+        begin
+          @test_coll.insert(default_doc.merge({ :y => "why" }), { :safe => true })
+        rescue
+          retry
+        end
+
+        result = retry_until_true(2 * TIMEOUT) do
+          response = @solr.select({ :params => { :q => query }})
+          solr_doc = response["response"]["docs"].first
+          not solr_doc.nil?
+        end
+
+        assert(result, "Failed to update Solr within #{TIMEOUT} seconds")
+      end
+    end
+  end
 end
 

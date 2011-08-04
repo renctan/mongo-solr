@@ -13,6 +13,8 @@ module MongoSolr
     #   Note that if the hash contains an account to the admin db, the other accounts
     #   will be ignored.
     def self.authenticate_to_db(db_connection, db_pass)
+      # TODO: handle replica sets authentication!
+
       admin_auth = db_pass["admin"]
 
       unless admin_auth.nil? then
