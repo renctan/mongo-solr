@@ -13,6 +13,8 @@ module MongoSolr
   # A simple class utility for indexing an entire MongoDB database contents (excluding
   # administrative collections) to Solr.
   class SolrSynchronizer
+    include Util
+
     # Creates a synchronizer instance.
     #
     # @param solr [RSolr::Client] The client to the Solr server to populate database documents.
@@ -184,7 +186,7 @@ module MongoSolr
           begin
             doc = cursor.next_document
           rescue => e
-            @logger.error "#{@name}: #{Util.get_full_exception_msg(e)}"
+            @logger.error "#{@name}: #{get_full_exception_msg(e)}"
             cursor_exception_occured = true
             yield :excep, doc_count if block_given?
             break
@@ -268,7 +270,7 @@ module MongoSolr
     #   timestamp. Nil timestamps will be ignored.
     def dump_collection(namespace, timestamp = nil)
       @logger.info "#{@name}: dumping #{namespace}..."
-      db_name, coll = Util.get_db_and_coll_from_ns(namespace)
+      db_name, coll = get_db_and_coll_from_ns(namespace)
 
       retry_until_ok do
         @db_connection[db_name][coll].find().each do |doc|
@@ -339,7 +341,7 @@ module MongoSolr
       end
 
       update_list.each do |namespace, id_list|
-        database, collection = Util.get_db_and_coll_from_ns(namespace)
+        database, collection = get_db_and_coll_from_ns(namespace)
 
         retry_until_ok do
           to_update = @db_connection.db(database).collection(collection).
@@ -533,7 +535,7 @@ module MongoSolr
       begin
         yield block
       rescue => e
-        @logger.error "#{@name}: #{Util.get_full_exception_msg(e)}"
+        @logger.error "#{@name}: #{get_full_exception_msg(e)}"
         sleep @err_retry_interval
         retry
       end
@@ -585,7 +587,7 @@ module MongoSolr
       # 1. @oplog_backlog
       # 2. Spawns a thread that uses @oplog_backlog
 
-      db_name, coll_name = Util.get_db_and_coll_from_ns(oplog_ns)
+      db_name, coll_name = get_db_and_coll_from_ns(oplog_ns)
       db = retry_until_ok { @db_connection.db(db_name) }
 
       backlog_sync_thread = Thread.start do
@@ -695,7 +697,7 @@ module MongoSolr
 
       if start_ts.nil? then
         dump_and_sync(namespace, wait, &block)
-      elsif Util.compare_bson_ts(start_ts, end_ts) == -1 then
+      elsif compare_bson_ts(start_ts, end_ts) == -1 then
         result = oplog_coll.find({ "ns" => namespace,
                                    "ts" => { "$gte" => start_ts, "$lte" => end_ts }},
                                  { :sort => ["$natural", :asc] })

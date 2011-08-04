@@ -25,6 +25,7 @@ require_relative "src/solr_config_const"
 
 if $0 == __FILE__ then
   include MongoSolr
+  include MongoSolr::Util
 
   options = ArgumentParser.parse_options(ARGV)
 
@@ -35,7 +36,7 @@ if $0 == __FILE__ then
     mongo = Mongo::Connection.new(mongo_loc, options.mongo_port)
   end
 
-  Util.authenticate_to_db(mongo, options.auth)
+  authenticate_to_db(mongo, options.auth)
 
   logger = Logger.new(STDOUT)
 

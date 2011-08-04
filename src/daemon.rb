@@ -12,6 +12,7 @@ module MongoSolr
   # Note: Not thread-safe
   class SolrSyncThread
     extend Forwardable
+    include Util
 
     def_delegators :@solr, :update_config
 
@@ -79,7 +80,7 @@ module MongoSolr
 
               solr_sync.update_config({ :ns_set => new_ns_set, :checkpt => new_checkpoint })
               solr_sync_set.delete url
-            elsif Util.url_ok?(url, logger) then
+            elsif url_ok?(url, logger) then
               solr = RSolr.connect(:url => url)
               config_writer = config_writer_builder.create_writer(url)
 
@@ -107,7 +108,7 @@ module MongoSolr
         rescue StaleCursorException
           raise
         rescue => e
-          logger.error Util.get_full_exception_msg(e)
+          logger.error get_full_exception_msg(e)
           sleep err_retry_interval
         end
       end

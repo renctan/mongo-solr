@@ -1,7 +1,7 @@
 require "open-uri"
 
 module MongoSolr
-  class Util
+  module Util
     # Helper method for authenticating to a database.
     #
     # @param db_connection [Mongo::Connection] A connection to a MongoDB server
@@ -12,7 +12,7 @@ module MongoSolr
     #
     #   Note that if the hash contains an account to the admin db, the other accounts
     #   will be ignored.
-    def self.authenticate_to_db(db_connection, db_pass)
+    def authenticate_to_db(db_connection, db_pass)
       # TODO: handle replica sets authentication!
 
       admin_auth = db_pass["admin"]
@@ -32,7 +32,7 @@ module MongoSolr
     # @param logger [Logger]
     #
     # @return [Boolean] true if url can be reached.
-    def self.url_ok?(url, logger)
+    def url_ok?(url, logger)
       ret = true
 
       begin
@@ -54,7 +54,7 @@ module MongoSolr
     # @param ts2 [BSON::Timestamp]
     #
     # @return [Number] 0 if both are equal, -1 if ts1 < ts2 and 1 otherwise.
-    def self.compare_bson_ts(ts1, ts2)
+    def compare_bson_ts(ts1, ts2)
       if ts1.seconds < ts2.seconds then
         return -1
       elsif ts1.seconds > ts2.seconds then
@@ -74,7 +74,7 @@ module MongoSolr
     #
     # @return [String] the message which contains the description with the complete
     #   stack trace.
-    def self.get_full_exception_msg(exception)
+    def get_full_exception_msg(exception)
       return exception.message + exception.backtrace.join("\n")
     end
 
@@ -84,7 +84,7 @@ module MongoSolr
     #
     # @return [String, String] the two strings with the first one as the database name
     #   and the second one as the collection name.
-    def self.get_db_and_coll_from_ns(namespace)
+    def get_db_and_coll_from_ns(namespace)
       split = namespace.split(".")
       db_name = split.first
 

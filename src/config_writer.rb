@@ -4,6 +4,8 @@ require_relative "util"
 module MongoSolr
   # A simple class for writing updates to the configuration database.
   class ConfigWriter
+    include Util
+
     # @param solr_loc [String] The location of the Solr Server
     # @param coll [Mongo::Collection] The configuration database collection.
     # @param logger [Logger] A logger object to use for logging.
@@ -28,7 +30,7 @@ module MongoSolr
                          SolrConfigConst::UPDATE_TIMESTAMP_KEY => new_timestamp
                        }})
       rescue => e
-        @logger.error Util.get_full_exception_msg(e) unless @logger.nil?
+        @logger.error get_full_exception_msg(e) unless @logger.nil?
       end
     end
 
@@ -40,7 +42,7 @@ module MongoSolr
         @coll.update({ SolrConfigConst::SOLR_URL_KEY => @solr_loc },
                      { "$set" => { SolrConfigConst::COMMIT_TIMESTAMP_KEY => timestamp }})
       rescue => e
-        @logger.error Util.get_full_exception_msg(e) unless @logger.nil?
+        @logger.error get_full_exception_msg(e) unless @logger.nil?
       end
     end
   end

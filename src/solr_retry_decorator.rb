@@ -7,6 +7,8 @@ module MongoSolr
   # Currently supported methods:
   # add, delete_by_id, commit
   class SolrRetryDecorator
+    include Util
+
     # @param solr [RSolr::Client] The Solr client to wrap.
     # @param retry_interval [number] Time in seconds to wait until retrying a failed invocation.
     # @param logger [Logger] The logger to use when outputting errors encountered.
@@ -27,7 +29,7 @@ module MongoSolr
           begin
             @solr.send(name, *args)
           rescue => e
-            @logger.error Util.get_full_exception_msg(e) unless @logger.nil?
+            @logger.error get_full_exception_msg(e) unless @logger.nil?
             sleep @interval
             retry
           end
