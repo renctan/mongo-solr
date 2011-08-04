@@ -1,5 +1,5 @@
 # Replica Set test helper copied from the MongoDB Ruby Driver Tests (with slight
-# modifications, like removing logging to STDOUT):
+# modifications, like making it more silent)
 # https://github.com/mongodb/mongo-ruby-driver/blob/master/test/tools/repl_set_manager.rb
 
 require 'thread'
@@ -63,9 +63,7 @@ class ReplSetManager
 
   def cleanup_set
     `killall mongod 2> /dev/null`
-    @count.times do |n|
-      system("rm -rf #{@mongods[n]['db_path']}")
-    end
+    system("rm -rf #{@path}")
   end
 
   def init_node(n)
