@@ -77,7 +77,7 @@ MSolr.getConfigDBName = function ( mongo ) {
 /**
  * Gets the settings of all indexing servers.
  * 
- * @return {Array} The list of server settings.
+ * @return {DBQuery} The cursor to the configuration documents.
  */
 MSolr.prototype.showConfig = function () {
   return this.coll.find();
