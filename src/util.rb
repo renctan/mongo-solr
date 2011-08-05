@@ -121,6 +121,16 @@ module MongoSolr
 
       return mongo
     end
+
+    # Converts a BSON timestamp object into an integer. Conversion rule is based from
+    # the specs (http://bsonspec.org/#/specification).
+    #
+    # @param [BSON::Timestamp]
+    #
+    # @return [Number] an integer value representation of the BSON timestamp object.
+    def bsonts_to_long(ts)
+      return ((ts.seconds << 32) + ts.increment)
+    end
   end
 end
 

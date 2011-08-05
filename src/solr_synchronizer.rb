@@ -15,6 +15,9 @@ module MongoSolr
   class SolrSynchronizer
     include Util
 
+    SOLR_TS_FIELD = "$ts"
+    SOLR_DELETED_FIELD = "$deleted"
+
     # Creates a synchronizer instance.
     #
     # @param solr [RSolr::Client] The client to the Solr server to populate database documents.
@@ -266,15 +269,15 @@ module MongoSolr
     # Dumps the contents of a collection to Solr.
     #
     # @param namespace [String] The namespace of the collection to dump.
-    # @param timestamp [BSON::Timestamp] (nil) the timestamp to use when updating the update
-    #   timestamp. Nil timestamps will be ignored.
-    def dump_collection(namespace, timestamp = nil)
+    # @param timestamp [BSON::Timestamp] the timestamp to use when updating the update
+    #   timestamp.
+    def dump_collection(namespace, timestamp)
       @logger.info "#{@name}: dumping #{namespace}..."
       db_name, coll = get_db_and_coll_from_ns(namespace)
 
       retry_until_ok do
         @db_connection[db_name][coll].find().each do |doc|
-          @solr.add(DocumentTransform.translate_doc(doc))
+          @solr.add(prepare_solr_doc(doc, namespace, timestamp))
           # Do not update commit timestamp here since the stream of data from the
           # database is not guaranteed to be sequential in time.
         end
@@ -282,10 +285,8 @@ module MongoSolr
 
       @solr.commit
 
-      unless timestamp.nil?
-        @config_writer.update_timestamp(namespace, timestamp)
-        @config_writer.update_commit_timestamp(timestamp) 
-      end
+      @config_writer.update_timestamp(namespace, timestamp)
+      @config_writer.update_commit_timestamp(timestamp) 
 
       @logger.info "#{@name}: Finished dumping #{namespace}"
     end
@@ -309,8 +310,8 @@ module MongoSolr
         case oplog_entry["op"]
         when "i" then
           @logger.info "#{@name}: adding #{doc.inspect}"
-          @solr.add(DocumentTransform.translate_doc(doc))
-          @config_writer.update_timestamp(namespace, timestamp) unless timestamp.nil?
+          @solr.add(prepare_solr_doc(doc, namespace, timestamp))
+          @config_writer.update_timestamp(namespace, timestamp)
 
         when "u" then
           # Batch the documents that needs a new update to minimize DB roundtrips.
@@ -328,9 +329,12 @@ module MongoSolr
           id = oplog_entry["o"]["_id"]
           to_update.delete(id)
 
-          @logger.info "#{@name}: deleting #{doc.inspect}"
-          @solr.delete_by_id id
-          @config_writer.update_timestamp(namespace, timestamp) unless timestamp.nil?
+          @logger.info "#{@name}: marked as deleted: #{doc.inspect}"
+          new_doc = prepare_solr_doc({ "_id" => id }, namespace, timestamp)
+          new_doc[SOLR_DELETED_FIELD] = true
+          @solr.add(new_doc)
+
+          @config_writer.update_timestamp(namespace, timestamp)
 
         when "n" then
           # NOOP: do nothing
@@ -349,9 +353,9 @@ module MongoSolr
 
           to_update.each do |doc|
             @logger.info "#{@name}: updating #{doc.inspect}"
-            @solr.add(DocumentTransform.translate_doc(doc))
+            @solr.add(prepare_solr_doc(doc, namespace, timestamp))
             # Use the last timestamp from oplog_doc_entries.
-            @config_writer.update_timestamp(namespace, timestamp) unless timestamp.nil?
+            @config_writer.update_timestamp(namespace, timestamp)
 
             # Remove from the set so there will be less documents to update
             # when an exception occurs and this block is executed again
@@ -775,6 +779,32 @@ module MongoSolr
 
         backlog.delete(namespace)
       end
+    end
+
+    # Prepares the document for indexing to Solr.
+    #
+    # @param doc [Object] The Mongo document to index to Solr
+    # @param ns [String] The namespace of the document
+    # @param ts [BSON::Timestamp] The timestamp to embed to this document
+    #
+    # @return [Object] the pre-formatted document to send to Solr.
+    def prepare_solr_doc(doc, ns, ts)
+      ret_doc = filter_doc(DocumentTransform.translate_doc(doc), ns).merge({
+        SOLR_TS_FIELD => bsonts_to_long(ts)
+      })
+
+      return ret_doc
+    end
+
+    # Removes fields that are not specified in the index configuration document.
+    #
+    # @param doc [Object] The Mongo document to filter.
+    # @param ns [String] The namespace of the document
+    #
+    # @return [Object] the filtered document
+    def filter_doc(doc, ns)
+      # TODO: implement
+      return doc
     end
   end
 end

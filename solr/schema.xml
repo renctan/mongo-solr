@@ -454,6 +454,11 @@
    -->
 
    <field name="_id" type="string" indexed="true" stored="true" required="true" omitNorms="true" omitTermFreqAndPositions="true" />
+   <!-- BSON Timestamp that will be used when rollbacks happen. http://bsonspec.org/#/specification -->
+   <field name="$ts" type="long" indexed="true" stored="false" required="true" omitNorms="true" omitTermFreqAndPositions="true" />
+   <!-- Used to label documents instead of actually deleting them so it can easily be reverted back when a rollback happens -->
+   <field name="$deleted" type="boolean" indexed="true" stored="false" required="false" omitNorms="true" omitTermFreqAndPositions="true" />
+
 
    <!-- Dynamic field definitions.  If a field name is not found, dynamicFields
         will be used if the name matches any of the patterns.
@@ -506,5 +511,5 @@
  </similarity>
  -->
 
-</schema>
 
+</schema>

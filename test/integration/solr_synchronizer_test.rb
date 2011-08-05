@@ -125,38 +125,23 @@ class SolrSynchronizerTest < Test::Unit::TestCase
     end
 
     should "update deleted db contents to solr after dumping" do
-      @test_coll1.insert({ "msg" => "Hello world!" })
+      doc = { "msg" => "Hello world!" }
+      @test_coll1.insert(doc)
+      deleted_id = @test_coll1.find_one(doc)["_id"]
 
       @solr.stubs(:add)
       @solr.stubs(:commit)
-      @solr.expects(:delete_by_id).once
 
       @solr_sync.sync do |mode, doc_count|
         if mode == :finished_dumping then
+          @solr.expects(:add).once#.with do |doc_arg|
+#            puts "doc1: #{doc_arg.inspect}, id: #{id}"
+#            (doc_arg[SOLR_DELETED_FIELD] == true and doc_arg["_id"] == deleted_id)
+#          end
+
           @solr.expects(:commit).once
           @test_coll1.remove({ "msg" => "Hello world!" })
         elsif mode == :sync then
-          break
-        end
-      end
-    end
-
-    should "do db inserts, updates and deletes to solr after dumping" do
-      @test_coll1.insert({ "msg" => "Hello world!" })
-
-      @solr.stubs(:add)
-      @solr.stubs(:commit)
-
-      @solr_sync.sync do |mode, doc_count|
-        if mode == :finished_dumping then
-          @solr.expects(:add).twice
-          @solr.expects(:delete_by_id).once
-          @solr.expects(:commit).times(1..3)
-
-          @test_coll1.update({ "msg" => "Hello world!" }, {"$set" => {"from" => "Tim Berners"}})
-          @test_coll1.insert({ "lang" => "Ruby" })
-          @test_coll1.remove({ "lang" => "Ruby" })
-        elsif mode == :sync and doc_count >= 3 then
           break
         end
       end
@@ -492,18 +477,18 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       should "skip operations older than one's timestamp" do
         @test_coll1.insert({ :x => 1 })
         @test_coll1.db.get_last_error
+
         # hack for getting the last oplog timestamp
         timestamp1 = @solr_sync.send :get_last_oplog_timestamp
 
-        @test_coll1.remove({ :x => 1})
+        @test_coll1.insert({ :z => 3 })
         @test_coll1.db.get_last_error
         timestamp2 = @solr_sync.send :get_last_oplog_timestamp
 
         checkpoint_data = MongoSolr::CheckpointData.new(timestamp2)
         checkpoint_data.set(@test_coll1_ns, timestamp1)
 
-        @solr.expects(:add).never
-        @solr.expects(:delete_by_id).once
+        @solr.expects(:add).once
         @solr.expects(:commit).at_least_once
 
         @solr_sync.update_config({ :checkpt => checkpoint_data })
@@ -537,25 +522,25 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
       should "properly update after skipping ops during checkpoint recovery" do
         @test_coll1.insert({ :x => 1 })
-        @test_coll1.insert({ :z => 3 })
+        @test_coll1.insert({ :y => 2 })
         @test_coll1.db.get_last_error
         # hack for getting the last oplog timestamp
         timestamp1 = @solr_sync.send :get_last_oplog_timestamp
 
-        @test_coll1.remove({ :x => 1})
+        @test_coll1.insert({ :z => 3 })
         @test_coll1.db.get_last_error
         timestamp2 = @solr_sync.send :get_last_oplog_timestamp
 
         checkpoint_data = MongoSolr::CheckpointData.new(timestamp2)
         checkpoint_data.set(@test_coll1_ns, timestamp1)
 
-        @solr.stubs(:delete_by_id)
+        @solr.stubs(:add)
         @solr.stubs(:commit)
 
         @solr_sync.update_config({ :checkpt => checkpoint_data })
         @solr_sync.sync do |mode, count|
           if mode == :finished_dumping then
-            @solr.expects(:add).once
+            @solr.expects(:add).once.with { |doc_arg| doc_arg["z"] == 5 }
             @solr.expects(:commit).at_least(1)
 
             @test_coll1.update({ :z => 3 }, { "$set" => { :z => 5 }})
