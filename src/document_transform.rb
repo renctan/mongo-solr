@@ -2,17 +2,17 @@ require "mongo"
 
 module MongoSolr
   class DocumentTransform
-    DEFAULT_ARRAY_SEPARATOR = "_"
-    DEFAULT_HASH_SEPARATOR = "_"
+    DEFAULT_ARRAY_SEPARATOR = "."
+    DEFAULT_HASH_SEPARATOR = "."
 
     # Converts a given document into a hash structure with only one level of nesting by
     # collapsing the whole access path to all leaf elements into a single string that
     # serves as the key to that element.
     #
     # @param doc [Hash, BSON::OrderedHash] The document to convert
-    # @param array_separator [String] ("_") The string to use when delimiting the name for 
+    # @param array_separator [String] (".") The string to use when delimiting the name for 
     #   the index of an array
-    # @param hash_separator [String] ("_") The string to use when delimiting the name for 
+    # @param hash_separator [String] (".") The string to use when delimiting the name for 
     #   the key of a hash
     #
     # @return [Hash] The new hash with flattened structure
@@ -35,9 +35,9 @@ module MongoSolr
     #
     # @param key_prefix [String] The key of the parent element
     # @param array [Array] The array to flatten
-    # @param array_separator [String] ("_") The string to use when delimiting the name for 
+    # @param array_separator [String] (".") The string to use when delimiting the name for 
     #   the index of an array
-    # @param hash_separator [String] ("_") The string to use when delimiting the name for 
+    # @param hash_separator [String] (".") The string to use when delimiting the name for 
     #   the key of a hash
     #
     # @return [Hash] The new hash with flattened structure
@@ -65,9 +65,9 @@ module MongoSolr
     #
     # @param key_prefix [String] The key of the parent element
     # @param hash [Hash, BSON::OrderedHash] A hash to convert
-    # @param array_separator [String] ("_") The string to use when delimiting the name for 
+    # @param array_separator [String] (".") The string to use when delimiting the name for 
     #   the index of an array
-    # @param hash_separator [String] ("_") The string to use when delimiting the name for 
+    # @param hash_separator [String] (".") The string to use when delimiting the name for 
     #   the key of a hash
     #
     # @return [Hash] The new hash with flattened structure
