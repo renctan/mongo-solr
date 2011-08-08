@@ -126,18 +126,17 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
     should "update deleted db contents to solr after dumping" do
       doc = { "msg" => "Hello world!" }
-      @test_coll1.insert(doc)
-      deleted_id = @test_coll1.find_one(doc)["_id"]
+      deleted_id = @test_coll1.insert(doc)
 
       @solr.stubs(:add)
       @solr.stubs(:commit)
 
       @solr_sync.sync do |mode, doc_count|
         if mode == :finished_dumping then
-          @solr.expects(:add).once#.with do |doc_arg|
-#            puts "doc1: #{doc_arg.inspect}, id: #{id}"
-#            (doc_arg[SOLR_DELETED_FIELD] == true and doc_arg["_id"] == deleted_id)
-#          end
+          @solr.expects(:add).once.with do |doc_arg|
+            doc_arg[MongoSolr::SolrSynchronizer::SOLR_DELETED_FIELD] == true and
+              doc_arg["_id"] == deleted_id
+          end
 
           @solr.expects(:commit).once
           @test_coll1.remove({ "msg" => "Hello world!" })
