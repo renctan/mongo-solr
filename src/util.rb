@@ -1,4 +1,5 @@
 require "open-uri"
+require "bson"
 
 module MongoSolr
   module Util
@@ -125,11 +126,23 @@ module MongoSolr
     # Converts a BSON timestamp object into an integer. Conversion rule is based from
     # the specs (http://bsonspec.org/#/specification).
     #
-    # @param [BSON::Timestamp]
+    # @param [BSON::Timestamp] the timestamp object
     #
     # @return [Number] an integer value representation of the BSON timestamp object.
     def bsonts_to_long(ts)
       return ((ts.seconds << 32) + ts.increment)
+    end
+
+    # Converts an integer value to a BSON timestamp
+    #
+    # @param [Number] the integer value to convert
+    #
+    # @return [BSON::Timestamp] the timestamp representation of the object
+    def long_to_bsonts(val)
+      seconds = val >> 32
+      increment = val & 0xffffffff
+
+      return BSON::Timestamp.new(seconds, increment)
     end
   end
 end
