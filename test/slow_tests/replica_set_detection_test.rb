@@ -33,8 +33,8 @@ class ReplicaSetDetectionTest < Test::Unit::TestCase
 
   context "replica set server" do
     setup do
-      @rs = ReplSetManager.new({ :arbiter_count => 0,
-                                 :secondary_count => 2,
+      @rs = ReplSetManager.new({ :arbiter_count => 1,
+                                 :secondary_count => 1,
                                  :passive_count => 0
                                })
       @rs.start_set

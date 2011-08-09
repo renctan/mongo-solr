@@ -16,6 +16,7 @@ module MongoSolr
     include Util
 
     SOLR_TS_FIELD = "$ts"
+    SOLR_NS_FIELD = "$ns"
     SOLR_DELETED_FIELD = "$deleted"
 
     # Creates a synchronizer instance.
@@ -143,6 +144,8 @@ module MongoSolr
     #      doc_count contains the number of docs synched with Solr so far.
     #   3. block(:excep, doc_count) will be called everytime an exception occured while trying
     #      to update Solr.
+    #   4. block(:cursor_reset, doc_count) will be called everytime an exception occured and the
+    #      cursor was updated.
     #
     # @raise [OplogException]
     #
@@ -239,6 +242,8 @@ module MongoSolr
               raise StaleCursorException, STALE_CURSOR_MSG
             end
           end
+
+          yield :cursor_reset, doc_count if block_given?
         end
       end
     end
@@ -564,8 +569,18 @@ module MongoSolr
           # This does not necessarily mean that the cursor is too stale, since the
           # timestamp passed can be a timestamp of a no-op entry. So double check
           # if that said entry still exists.
-          entry = get_oplog_collection(@mode).find_one({ "ts" => timestamp })
-          ret = cursor unless entry.nil?
+          oplog_coll = get_oplog_collection(@mode)
+          entry = oplog_coll.find_one({ "ts" => timestamp })
+
+          if entry.nil? then
+            less_than_doc = oplog_coll.find_one({ "ts" => { "$lt" => timestamp }})
+
+            unless less_than_doc.nil? then
+              ret = get_oplog_cursor_w_check(rollback)
+            end
+          else
+            ret = cursor
+          end
         elsif timestamp == doc["ts"] then
           ret = cursor
         else
@@ -634,7 +649,9 @@ module MongoSolr
       # 1. A newly added collection/field to index was not able to completely consume
       #    its backlog.
       checkpoint_data.each do |ns, ts|
-        replay_oplog_and_sync(ns, ts, commit_ts, true)
+        unless ts == commit_ts then
+          replay_oplog_and_sync(ns, ts, commit_ts, true)
+        end
       end
     end
 
@@ -790,7 +807,8 @@ module MongoSolr
     # @return [Object] the pre-formatted document to send to Solr.
     def prepare_solr_doc(doc, ns, ts)
       ret_doc = filter_doc(DocumentTransform.translate_doc(doc), ns).merge({
-        SOLR_TS_FIELD => bsonts_to_long(ts)
+        SOLR_TS_FIELD => bsonts_to_long(ts),
+        SOLR_NS_FIELD => ns
       })
 
       return ret_doc
@@ -805,6 +823,90 @@ module MongoSolr
     def filter_doc(doc, ns)
       # TODO: implement
       return doc
+    end
+
+    # Performs a rollback on the Solr server.
+    # 
+    # @return [BSON::Timestamp] the timestamp of the oplog entry less than the timestamp
+    #   of the oldest document being rollback to.
+    def rollback
+      response = @solr.get("select",
+                           { :params => { :q => "#{SOLR_TS_FIELD}:*",
+                               :sort => "#{SOLR_TS_FIELD} desc", :rows => 1 }})
+
+      latest_solr_doc = response["response"]["docs"].first
+
+      if latest_solr_doc.nil? then
+        return nil
+      else
+        solr_ts = latest_solr_doc[SOLR_TS_FIELD]
+        doc = retry_until_ok do
+          get_oplog_collection(@mode).
+            find_one({ "ts" => { "$lt" => long_to_bsonts(solr_ts) }},
+                     :sort => ["$natural", :desc])
+        end
+
+        return nil if doc.nil?
+
+        # Basically, the rollback window is the time between the latest timestamp in Solr
+        # and the largest timestamp value in the oplog less than the latest timestamp in
+        # Solr. The assumption here is that there can be only one primary at any time
+        # (which is true as of MongoDB v1.8.3) and as a consequence, there is only one
+        # unique timeline for the entire history of a replica set.
+        rollback_cutoff_timestamp = doc["ts"]
+        start_ts = bsonts_to_long(rollback_cutoff_timestamp)
+        end_ts = solr_ts
+
+        query = "#{SOLR_TS_FIELD}:[#{start_ts} TO #{end_ts}]"
+        response = @solr.get("select", { :params => { :q => query }})
+        docs_to_rollback = response["response"]["docs"]
+
+        rollback_set = {}
+        docs_to_rollback.each do |solr_doc|
+          ns = solr_doc[SOLR_NS_FIELD]
+
+          # No need to use Set since each entry in the Solr server should have a unique _id
+          if rollback_set.has_key? ns then
+            rollback_set[ns] << solr_doc["_id"]
+          else
+            rollback_set[ns] = [solr_doc["_id"]]
+          end
+        end
+
+        rollback_set.each do |namespace, id_list|
+          database, collection = get_db_and_coll_from_ns(namespace)
+          bson_obj_id_list = id_list.map { |x| BSON::ObjectId(x) }
+
+          to_update = retry_until_ok do
+            # Assumption for using to_a: the size of the id_list is small
+            @db_connection[database][collection].
+              find({ "_id" => { "$in" => bson_obj_id_list }}).to_a
+          end
+
+          id_list_set = Set.new(id_list)
+          to_index = []
+          to_update.each do |doc|
+            id_list_set.delete(doc["_id"].to_s) # Note that doc._id is in BSON::ObjectId
+            to_index << prepare_solr_doc(doc, namespace, rollback_cutoff_timestamp)
+          end
+
+          # This set now contains the new inserts that where the rolled back. That is why
+          # why the new primary does not have a document for it.
+          id_list_set.each do |id|
+            new_doc = prepare_solr_doc({ "_id" => id }, namespace, rollback_cutoff_timestamp)
+            new_doc[SOLR_DELETED_FIELD] = true
+            to_index << new_doc
+          end
+
+          @solr.add(to_index)
+          @logger.info("#{@name}: Rolling back the following docs:\n#{to_index.inspect}")
+        end
+
+        @solr.commit
+        @config_writer.update_commit_timestamp(rollback_cutoff_timestamp)
+
+        return rollback_cutoff_timestamp
+      end
     end
   end
 end

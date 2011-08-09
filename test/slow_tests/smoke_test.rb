@@ -182,8 +182,8 @@ JAVASCRIPT
 
   context "replica sets" do
     setup do
-      @rs = ReplSetManager.new({ :arbiter_count => 0,
-                                 :secondary_count => 2,
+      @rs = ReplSetManager.new({ :arbiter_count => 1,
+                                 :secondary_count => 1,
                                  :passive_count => 0
                                })
       @rs.start_set
@@ -248,7 +248,7 @@ JAVASCRIPT
 
         assert(result, "Failed to index to Solr within #{TIMEOUT} seconds")
 
-        @rs.step_down_primary
+        @rs.kill_primary
 
         query = SOLR_TEST_Q + " AND y:why"
 

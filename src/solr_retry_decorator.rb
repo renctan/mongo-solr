@@ -37,7 +37,7 @@ module MongoSolr
       end
     end
 
-    retryify :add, :delete_by_id, :commit
+    retryify :add, :delete_by_id, :commit, :get
   end
 end
 
