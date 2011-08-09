@@ -1,7 +1,11 @@
 require "open-uri"
 require "bson"
+require_relative "exception"
 
 module MongoSolr
+  MASTER_SLAVE_OPLOG_COLL_NAME = "oplog.$main"
+  REPL_SET_OPLOG_COLL_NAME = "oplog.rs"
+
   module Util
     # Helper method for authenticating to a database.
     #
@@ -144,6 +148,66 @@ module MongoSolr
 
       return BSON::Timestamp.new(seconds, increment)
     end
+
+    # Gets the oplog collection of a Mongo instance.
+    #
+    # @param mongo [Mongo::Connection] The connection to the Mongo instance.
+    # @param mode [Symbol] The mode of which the database server is running on. Recognized
+    #   symbols: :master_slave, :repl_set, :auto
+    #
+    # @return [Mongo::Collection] the oplog collection
+    #
+    # @raise [OplogException]
+    def get_oplog_collection(mongo, mode)
+      oplog_coll = nil
+      oplog_collection_name = case mode
+                              when :master_slave then MASTER_SLAVE_OPLOG_COLL_NAME
+                              when :repl_set then REPL_SET_OPLOG_COLL_NAME
+                              else ""
+                              end
+
+      oplog_db = mongo.db("local")
+
+      if oplog_collection_name.empty? then
+        # Try to figure out which collection exists in the database
+        candidate_coll = []
+
+        begin
+          candidate_coll << get_oplog_collection(mongo, :master_slave)
+        rescue OplogException
+          # Do nothing
+        end
+ 
+        begin
+          candidate_coll << get_oplog_collection(mongo, :repl_set)
+        rescue OplogException
+          # Do nothing
+        end
+
+        if candidate_coll.empty? then
+          raise OplogException, OPLOG_NOT_FOUND_MSG
+        elsif candidate_coll.size > 1 then
+          raise OplogException, OPLOG_AMBIGUOUS_MSG
+        else
+          oplog_coll = candidate_coll.first
+        end
+      else
+        reply = oplog_db.command({ :collStats => oplog_collection_name },
+                                 { :check_response => false })
+
+        raise OplogException, OPLOG_NOT_FOUND_MSG unless reply["errmsg"].nil?
+
+        oplog_coll = oplog_db.collection(oplog_collection_name)
+      end
+
+      return oplog_coll
+    end
+
+    private
+    OPLOG_NOT_FOUND_MSG = "Cannot find oplog collection. Make sure that " +
+      "you are connected to a server running on master/slave or replica set configuration."
+    OPLOG_AMBIGUOUS_MSG = "Cannot determine which oplog to use. Please specify " +
+      "the appropriate mode."
   end
 end
 

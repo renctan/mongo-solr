@@ -40,17 +40,19 @@ if $0 == __FILE__ then
 
   if mongo.is_a? Mongo::ReplSetConnection then
     puts "Connected to a replica set @ #{mongo.host}:#{mongo.port}"
+    oplog_coll = get_oplog_collection(mongo, :repl_set)
+  else
+    oplog_coll = get_oplog_collection(mongo, :master_slave)
   end
 
   logger = Logger.new(STDOUT)
 
   config_db_name = MongoDBConfigSource.get_config_db_name(mongo)
-  config_coll = mongo.db(config_db_name).collection(SolrConfigConst::CONFIG_COLLECTION_NAME)
+  config_coll = mongo[config_db_name][SolrConfigConst::CONFIG_COLLECTION_NAME]
   config_reader = MongoDBConfigSource.new(config_coll, logger)
   config_writer_builder = ConfigWriterBuilder.new(config_coll, logger)
 
   daemon_opt = {
-    :mode => options.mode,
     :config_poll_interval => options.config_interval,
     :err_retry_interval => options.err_interval,
     :auto_dump => options.auto_dump,
@@ -58,6 +60,6 @@ if $0 == __FILE__ then
     :logger => logger
   }
 
-  Daemon.run(mongo, config_reader, config_writer_builder, daemon_opt)
+  Daemon.run(mongo, oplog_coll, config_reader, config_writer_builder, daemon_opt)
 end
 

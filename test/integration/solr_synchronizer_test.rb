@@ -1,8 +1,11 @@
 require File.expand_path("../../test_helper", __FILE__)
 require "#{PROJ_SRC_PATH}/solr_synchronizer"
+require "#{PROJ_SRC_PATH}/util"
 require "#{PROJ_SRC_PATH}/checkpoint_data"
 
 class SolrSynchronizerTest < Test::Unit::TestCase
+  include MongoSolr::Util
+
   DB_LOC = "localhost"
   DB_PORT = 27017
   DB_CONNECTION = Mongo::Connection.new(DB_LOC, DB_PORT)
@@ -34,9 +37,11 @@ class SolrSynchronizerTest < Test::Unit::TestCase
       config_writer.stubs(:update_timestamp)
       config_writer.stubs(:update_commit_timestamp)
 
-      @solr_sync = MongoSolr::SolrSynchronizer.new(@solr, @connection, config_writer,
-                                                   { :ns_set => basic_ns_set,
-                                                     :logger => DEFAULT_LOGGER })
+      oplog_coll = get_oplog_collection(DB_CONNECTION, :auto)
+
+      @solr_sync = MongoSolr::SolrSynchronizer.
+        new(@solr, @connection, oplog_coll, config_writer,
+            { :ns_set => basic_ns_set, :logger => DEFAULT_LOGGER })
     end
 
     teardown do

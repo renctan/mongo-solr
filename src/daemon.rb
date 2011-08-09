@@ -45,6 +45,7 @@ module MongoSolr
     # Run the daemon. This is a blocking call that runs an infinite loop.
     #
     # @param mongo [Mongo::Connection] A connection to the MongoDB instance.
+    # @param oplog_coll [Mongo::Collection] The oplog collection to monitor.
     # @param config_source [MongoSolr::ConfigSource] The object that contains the
     #   configuration information for all the different Solr Servers.
     # @param config_writer_builder [MongoSolr::ConfigWriterBuilder] The object that can
@@ -58,7 +59,7 @@ module MongoSolr
     #    after encountering an error in the Solr server or MongoDB instance.
     #
     # @see MongoSolr::SolrSynchronizer#new for more recognized values for the opt parameter.
-    def self.run(mongo, config_source, config_writer_builder, opt = {})
+    def self.run(mongo, oplog_coll, config_source, config_writer_builder, opt = {})
       config_poll_interval = opt[:config_poll_interval] || 1
       err_retry_interval = opt[:err_retry_interval] || 10
       logger = opt[:logger] || Logger.new(STDOUT)
@@ -88,8 +89,8 @@ module MongoSolr
               opt[:checkpt] = new_checkpoint
               opt[:name] = url
 
-              solr_sync =
-                SolrSyncThread.new(SolrSynchronizer.new(solr, mongo, config_writer, opt))
+              solr_sync = SolrSyncThread.
+                new(SolrSynchronizer.new(solr, mongo, oplog_coll, config_writer, opt))
               solr_sync.start
             else
               solr_sync = nil

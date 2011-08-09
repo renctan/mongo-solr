@@ -23,11 +23,10 @@ module MongoSolr
     #
     # @param solr [RSolr::Client] The client to the Solr server to populate database documents.
     # @param mongo_connection [Mongo::Connection] The connection to the database to synchronize.
+    # @param oplog_coll [Mongo::Collection] The oplog collection to monitor.
     # @param config_writer [MongoSolr::ConfigWriter] The object that can be used to update
     #   the configuration.
     #
-    # @option opt [Symbol] :mode (:auto) Mode of the MongoDB server connected to. Recognized 
-    #   symbols - :repl_set, :master_slave, :auto
     # @option opt [Hash<String, Set<String> >] :ns_set ({}) The set of namespaces to index.
     #   The key contains the name of the namespace and the value contains the names of the
     #   fields. Empty set for fields means all fields will be indexed.
@@ -51,14 +50,14 @@ module MongoSolr
     #  mongo = Mongo::Connection.new("localhost", 27017)
     #  solr_client = RSolr.connect(:url => "http://localhost:8983/solr")
     #  solr = MongoSolr::SolrSynchronizer.new(solr_client, mongo, :master_slave)
-    def initialize(solr, mongo_connection, config_writer, opt = {})
+    def initialize(solr, mongo_connection, oplog_coll, config_writer, opt = {})
       @db_connection = mongo_connection
-      @mode = opt[:mode] || :auto
       @logger = opt[:logger] || Logger.new(STDOUT)
       @name = opt[:name] || ""
       @update_interval = opt[:interval] || 0
       @err_retry_interval = opt[:err_retry_interval] || 1
       @auto_dump = opt[:auto_dump] || false
+      @oplog_coll = oplog_coll
       @config_writer = config_writer
 
       @solr = SolrRetryDecorator.new(solr, @err_retry_interval, @logger)
@@ -261,12 +260,6 @@ module MongoSolr
     ############################################################################
     private
     SPECIAL_COLLECTION_NAME_PATTERN = /^system\./
-    MASTER_SLAVE_OPLOG_COLL_NAME = "oplog.$main"
-    REPL_SET_OPLOG_COLL_NAME = "oplog.rs"
-    OPLOG_NOT_FOUND_MSG = "Cannot find oplog collection. Make sure that " +
-      "you are connected to a server running on master/slave or replica set configuration."
-    OPLOG_AMBIGUOUS_MSG = "Cannot determine which oplog to use. Please specify " +
-      "the appropriate mode."
     STALE_CURSOR_MSG = "Sync cursor is too stale: Cannot catch up with the update rate. " +
       "Please perform a manual dump."
     OPLOG_BATCH_SIZE = 200
@@ -384,57 +377,6 @@ module MongoSolr
     def filter_entry?(ns_set, namespace)
       return !ns_set.has_key?(namespace)
     end
-    
-    # @param mode [Symbol] The mode of which the database server is running on. Recognized
-    #   symbols: :master_slave, :repl_set, :auto
-    #
-    # @return [Mongo::Collection] the oplog collection
-    #
-    # @raise [OplogException]
-    def get_oplog_collection(mode)
-      oplog_coll = nil
-      oplog_collection_name = case mode
-                              when :master_slave then MASTER_SLAVE_OPLOG_COLL_NAME
-                              when :repl_set then REPL_SET_OPLOG_COLL_NAME
-                              else ""
-                              end
-
-      oplog_db = @db_connection.db("local")
-
-      if oplog_collection_name.empty? then
-        # Try to figure out which collection exists in the database
-        candidate_coll = []
-
-        begin
-          candidate_coll << get_oplog_collection(:master_slave)
-        rescue OplogException
-          # Do nothing
-        end
- 
-        begin
-          candidate_coll << get_oplog_collection(:repl_set)
-        rescue OplogException
-          # Do nothing
-        end
-
-        if candidate_coll.empty? then
-          raise OplogException, OPLOG_NOT_FOUND_MSG
-        elsif candidate_coll.size > 1 then
-          raise OplogException, OPLOG_AMBIGUOUS_MSG
-        else
-          oplog_coll = candidate_coll.first
-        end
-      else
-        reply = oplog_db.command({ :collStats => oplog_collection_name },
-                                 { :check_response => false })
-
-        raise OplogException, OPLOG_NOT_FOUND_MSG unless reply["errmsg"].nil?
-
-        oplog_coll = oplog_db.collection(oplog_collection_name)
-      end
-
-      return oplog_coll
-    end
 
     # Adds a collection without using a lock. Caller should be holding the lock for
     # @synching_mutex and @ns_set while calling this method.
@@ -511,8 +453,7 @@ module MongoSolr
     # @return [BSON::Timestamp] the timestamp object.
     def get_last_oplog_timestamp
       cur = retry_until_ok do
-        get_oplog_collection(@mode).find({}, :sort => ["$natural", :desc],
-                                         :limit => 1)
+        @oplog_coll.find({}, :sort => ["$natural", :desc], :limit => 1)
       end
 
       cur.next["ts"]
@@ -525,7 +466,7 @@ module MongoSolr
     #
     # @return [Mongo::Cursor] the tailable cursor
     def get_oplog_cursor(timestamp)
-      Mongo::Cursor.new(get_oplog_collection(@mode),
+      Mongo::Cursor.new(@oplog_coll,
                         { :tailable => true,
                           :selector => { "op" => { "$ne" => "n" },
                             "ts" => { "$gte" => timestamp } },
@@ -569,11 +510,10 @@ module MongoSolr
           # This does not necessarily mean that the cursor is too stale, since the
           # timestamp passed can be a timestamp of a no-op entry. So double check
           # if that said entry still exists.
-          oplog_coll = get_oplog_collection(@mode)
-          entry = oplog_coll.find_one({ "ts" => timestamp })
+          entry = @oplog_coll.find_one({ "ts" => timestamp })
 
           if entry.nil? then
-            less_than_doc = oplog_coll.find_one({ "ts" => { "$lt" => timestamp }})
+            less_than_doc = @oplog_coll.find_one({ "ts" => { "$lt" => timestamp }})
 
             unless less_than_doc.nil? then
               ret = get_oplog_cursor_w_check(rollback)
@@ -715,15 +655,17 @@ module MongoSolr
       # 1. calls dump_and_sync
       # 2. calls update_and_sync
 
-      oplog_coll = retry_until_ok { get_oplog_collection(@mode) }
-
       if start_ts.nil? then
         dump_and_sync(namespace, wait, &block)
       elsif compare_bson_ts(start_ts, end_ts) == -1 then
-        result = oplog_coll.find({ "ns" => namespace,
-                                   "ts" => { "$gte" => start_ts, "$lte" => end_ts }},
-                                 { :sort => ["$natural", :asc] })
-        doc = result.next_document
+        result = nil
+
+        doc = retry_until_ok do
+          result = @oplog_coll.find({ "ns" => namespace,
+                             "ts" => { "$gte" => start_ts, "$lte" => end_ts }},
+                           { :sort => ["$natural", :asc] })
+          result.next_document
+        end
 
         if (doc.nil? or start_ts != doc["ts"]) then
           # Timestamp is too old that the oplog entry for it is not available anymore
@@ -841,9 +783,8 @@ module MongoSolr
       else
         solr_ts = latest_solr_doc[SOLR_TS_FIELD]
         doc = retry_until_ok do
-          get_oplog_collection(@mode).
-            find_one({ "ts" => { "$lt" => long_to_bsonts(solr_ts) }},
-                     :sort => ["$natural", :desc])
+          @oplog_coll.find_one({ "ts" => { "$lt" => long_to_bsonts(solr_ts) }},
+                               :sort => ["$natural", :desc])
         end
 
         return nil if doc.nil?

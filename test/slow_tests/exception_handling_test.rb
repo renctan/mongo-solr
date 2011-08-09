@@ -2,6 +2,7 @@
 
 require File.expand_path("../../test_helper", __FILE__)
 require "#{PROJ_SRC_PATH}/solr_synchronizer"
+require "#{PROJ_SRC_PATH}/util"
 
 # Helper method for keep on trying to execute a block until there is no exception.
 # This is particularly helpful for waiting for the Mongo instance to finish starting up.
@@ -17,6 +18,8 @@ def retry_until_ok(&block)
 end
 
 class ExceptionHandlingTest < Test::Unit::TestCase
+  include MongoSolr::Util
+
   TEST_DB = "MongoSolrExceptionHandlingIntegrationTestDB"
   TEST_DB_2 = "#{TEST_DB}_2"
   MODE = :auto
@@ -43,9 +46,11 @@ class ExceptionHandlingTest < Test::Unit::TestCase
       config_writer.stubs(:update_timestamp)
       config_writer.stubs(:update_commit_timestamp)
 
-      @solr_sync = MongoSolr::SolrSynchronizer.new(@solr, @connection, config_writer,
-                                                   { :ns_set => basic_ns_set,
-                                                     :logger => DEFAULT_LOGGER })
+      oplog_coll = get_oplog_collection(@connection, :master_slave)
+
+      @solr_sync = MongoSolr::SolrSynchronizer.
+        new(@solr, @connection, oplog_coll, config_writer,
+            { :ns_set => basic_ns_set, :logger => DEFAULT_LOGGER })
     end
 
     teardown do

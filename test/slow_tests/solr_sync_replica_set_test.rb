@@ -13,6 +13,7 @@ require_relative("../repl_set_manager")
 
 class SolrSyncReplicaSetTest < Test::Unit::TestCase
   include MongoSolr
+  include MongoSolr::Util
 
   TEST_DB = "SolrSyncReplicaSetTest"
   DEFAULT_LOGGER = Logger.new("/dev/null")
@@ -37,9 +38,12 @@ class SolrSyncReplicaSetTest < Test::Unit::TestCase
       config_writer = mock()
       config_writer.stubs(:update_timestamp)
       config_writer.stubs(:update_commit_timestamp)
-      @solr_sync = SolrSynchronizer.new(@solr, @mongo, config_writer,
-                                        { :ns_set => { "#{TEST_DB}.test" => {} },
-                                          :logger => DEFAULT_LOGGER })
+
+      oplog_coll = get_oplog_collection(@mongo, :repl_set)
+
+      @solr_sync = SolrSynchronizer.
+        new(@solr, @mongo, oplog_coll, config_writer,
+            { :ns_set => { "#{TEST_DB}.test" => {} }, :logger => DEFAULT_LOGGER })
     end
 
     teardown do

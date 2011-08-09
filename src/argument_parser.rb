@@ -15,7 +15,6 @@ module MongoSolr
       options = OpenStruct.new
       options.mongo_loc = "localhost"
       options.mongo_port = 27017
-      options.mode = :auto
       options.interval = 1
       options.config_interval = 1
       options.err_interval = 10
@@ -41,17 +40,6 @@ module MongoSolr
                 "The port number of the MongoDB server.",
                 "Defaults to #{options.mongo_port}.") do |port_num|
           options.mongo_port = port_num
-        end
-
-        opts.separator ""
-        opts.on("-m", "--mode MODE", "ms for master/slave or rs for",
-                "replica set. Tries to automatically",
-                "detect which mode to use by default.") do |mode|
-          options.mode = case mode
-                         when "ms" then :master_slave
-                         when "rs" then :repl_set
-                         else :unknown
-                         end
         end
 
         opts.separator ""
