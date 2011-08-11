@@ -1,7 +1,6 @@
 require "set"
 require_relative "solr_config_const"
 require_relative "checkpoint_data"
-require_relative "util"
 
 module MongoSolr
   # A simple helper class for extracting the configuration information for a Solr Server.
