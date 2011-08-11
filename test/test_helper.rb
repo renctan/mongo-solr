@@ -1,9 +1,10 @@
-require "test/unit"
 require "fileutils"
 
 require "rubygems"
-require "shoulda"
+gem "test-unit" # Use the test-unit gem instead of the built-in one
+require "test/unit"
 require "mocha"
+require "shoulda"
 require "mongo"
 
 # Copy and pasted from:
@@ -79,6 +80,8 @@ module TestHelper
       elsif (Time.now - start_time > timeout) then
         break
       end
+
+      sleep 1 # Deschedule self to allow other threads to progress
     end
 
     return success
@@ -96,6 +99,19 @@ module TestHelper
     ensure
       Process.kill "TERM", daemon_pio.pid
       daemon_pio.close
+    end
+  end
+
+  # Helper method for keep on trying to execute a block until there is no exception.
+  # This is particularly helpful for waiting for the Mongo instance to finish starting up.
+  #
+  # @param block [Proc] The block procedure to execute
+  def retry_until_ok(&block)
+    begin
+      yield
+    rescue
+      sleep 1
+      retry
     end
   end
 end

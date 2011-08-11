@@ -1,12 +1,20 @@
+# Assumption: A Solr server is running @ http://localhost:8983/solr
+# Warning: Don't use a Solr server with important data as this test will wipe out
+#   all it's entire contents
+
 require File.expand_path("../../test_helper", __FILE__)
 
 require "mongo"
 require "rsolr"
+require "#{PROJ_SRC_PATH}/util"
 require_relative("../repl_set_manager")
 require_relative("../js_plugin_wrapper")
+require_relative "#{PROJ_SRC_PATH}/mongodb_config_source"
+require_relative "#{PROJ_SRC_PATH}/solr_config_const"
 
 # Simple test cases for testing the MongoSolr daemon and the mongo shell plugin.
 class SmokeTest < Test::Unit::TestCase
+  include MongoSolr
   include TestHelper
 
   TEST_DB = "smoke_test"
@@ -20,22 +28,25 @@ class SmokeTest < Test::Unit::TestCase
     { SOLR_TEST_KEY => SOLR_TEST_VALUE }
   end
 
+  def self.startup
+    @@mongo = MongoStarter.new
+  end
+
+  def self.shutdown
+    @@mongo.cleanup
+  end
+
   context "daemon" do
     DAEMON_ARGS = "-p #{MongoStarter::PORT}"
 
     setup do
-      @mongo = MongoStarter.new
-      @mongo.start
+      @@mongo.start
 
-      # Make sure that the Mongo instance can already accept connections before proceeding.
-      begin
-        connection = Mongo::Connection.new("localhost", MongoStarter::PORT)
-      rescue
-        sleep 1
-        retry
-      end
+      @mongo_conn = retry_until_ok { Mongo::Connection.new("localhost", MongoStarter::PORT) }
+      @mongo_conn.drop_database TEST_DB
+      config_db_name = MongoDBConfigSource.get_config_db_name(@mongo_conn)
+      @mongo_conn[config_db_name].drop_collection(SolrConfigConst::CONFIG_COLLECTION_NAME)
 
-      @mongo_conn = Mongo::Connection.new("localhost", MongoStarter::PORT)
       @test_coll = @mongo_conn[TEST_DB]["user"]
       @solr = RSolr.connect
       @js = JSPluginWrapper.new("localhost", MongoStarter::PORT)
@@ -44,7 +55,6 @@ class SmokeTest < Test::Unit::TestCase
     teardown do
       @solr.delete_by_query(SOLR_TEST_Q)
       @solr.commit
-      @mongo.cleanup
     end
 
     should "be able to perform dump" do
@@ -131,22 +141,16 @@ class SmokeTest < Test::Unit::TestCase
 
   context "plugin" do
     setup do
-      @mongo = MongoStarter.new
-      @mongo.start
+      @@mongo.start
 
       # Make sure that the Mongo instance can already accept connections before proceeding.
-      begin
-        connection = Mongo::Connection.new("localhost", MongoStarter::PORT)
-      rescue
-        sleep 1
-        retry
-      end
+      connection = retry_until_ok { Mongo::Connection.new("localhost", MongoStarter::PORT) }
+
+      connection.drop_database TEST_DB
+      config_db_name = MongoDBConfigSource.get_config_db_name(connection)
+      connection[config_db_name].drop_collection(SolrConfigConst::CONFIG_COLLECTION_NAME)
 
       @js = JSPluginWrapper.new("localhost", MongoStarter::PORT)
-    end
-
-    teardown do
-      @mongo.cleanup
     end
 
     # A simple test case for checking all the helper methods for the plugin does not
@@ -177,96 +181,6 @@ JAVASCRIPT
       out = @js.eval(code)
       assert_nil((out =~  /err|exception/i),
                  "Encountered error while executing js:\n#{out}")
-    end
-  end
-
-  context "replica sets" do
-    setup do
-      @rs = ReplSetManager.new({ :arbiter_count => 1,
-                                 :secondary_count => 1,
-                                 :passive_count => 0
-                               })
-      @rs.start_set
-
-      @conn_str = "mongodb://#{@rs.host}:#{@rs.ports[0]},#{@rs.host}:#{@rs.ports[1]}"
-      @mongo = Mongo::ReplSetConnection.new([@rs.host, @rs.ports[0]])
-      @test_coll = @mongo[TEST_DB]["test"]
-      @solr = RSolr.connect
-      @js = JSPluginWrapper.new(@rs.host, @rs.ports[0])
-    end
-
-    teardown do
-      @solr.delete_by_query(SOLR_TEST_Q)
-      @solr.commit
-      @rs.cleanup_set
-    end
-
-    should "update with normal rs" do
-      @js.index_to_solr(TEST_DB, @test_coll.name)
-      @test_coll.insert(default_doc.merge({ :x => "hello" }), { :safe => true })
-
-      run_daemon("-d #{@conn_str}") do
-        solr_doc = nil
-
-        # This block is just for synchronization purposes and is used to make
-        # sure that the daemon has already passed the dumping stage.
-        result = retry_until_true(TIMEOUT) do
-          response = @solr.select({ :params => { :q => SOLR_TEST_Q }})
-          solr_doc = response["response"]["docs"].first
-          not solr_doc.nil?
-        end
-
-        assert(result, "Failed to index to Solr within #{TIMEOUT} seconds")
-
-        query = SOLR_TEST_Q + " AND y:why"
-        @test_coll.insert(default_doc.merge({ :y => "why" }), { :safe => true })
-
-        result = retry_until_true(TIMEOUT) do
-          response = @solr.select({ :params => { :q => query }})
-          solr_doc = response["response"]["docs"].first
-          not solr_doc.nil?
-        end
-
-        assert(result, "Failed to update Solr within #{TIMEOUT} seconds")
-      end
-    end
-
-    should "be able to update after current primary steps down" do
-      @js.index_to_solr(TEST_DB, @test_coll.name)
-      @test_coll.insert(default_doc.merge({ :x => "hello" }), { :safe => true })
-
-      run_daemon("-d #{@conn_str}") do
-        solr_doc = nil
-
-        # This block is just for synchronization purposes and is used to make
-        # sure that the daemon has already passed the dumping stage.
-        result = retry_until_true(TIMEOUT) do
-          response = @solr.select({ :params => { :q => SOLR_TEST_Q }})
-          solr_doc = response["response"]["docs"].first
-          not solr_doc.nil?
-        end
-
-        assert(result, "Failed to index to Solr within #{TIMEOUT} seconds")
-
-        @rs.kill_primary
-
-        query = SOLR_TEST_Q + " AND y:why"
-
-        begin
-          @test_coll.insert(default_doc.merge({ :y => "why" }), { :safe => true })
-        rescue
-          retry
-        end
-
-        rs_timeout = 2 * TIMEOUT
-        result = retry_until_true(rs_timeout) do
-          response = @solr.select({ :params => { :q => query }})
-          solr_doc = response["response"]["docs"].first
-          not solr_doc.nil?
-        end
-
-        assert(result, "Failed to update Solr within #{rs_timeout} seconds")
-      end
     end
   end
 end

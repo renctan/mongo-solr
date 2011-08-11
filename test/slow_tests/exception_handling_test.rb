@@ -4,36 +4,33 @@ require File.expand_path("../../test_helper", __FILE__)
 require "#{PROJ_SRC_PATH}/solr_synchronizer"
 require "#{PROJ_SRC_PATH}/util"
 
-# Helper method for keep on trying to execute a block until there is no exception.
-# This is particularly helpful for waiting for the Mongo instance to finish starting up.
-#
-# @param block [Proc] The block procedure to execute
-def retry_until_ok(&block)
-  begin
-    yield
-  rescue
-    sleep 1
-    retry
-  end
-end
-
 class ExceptionHandlingTest < Test::Unit::TestCase
   include MongoSolr::Util
+  include TestHelper
 
   TEST_DB = "MongoSolrExceptionHandlingIntegrationTestDB"
   TEST_DB_2 = "#{TEST_DB}_2"
   MODE = :auto
   DEFAULT_LOGGER = Logger.new("/dev/null")
 
+  def self.startup
+    @@mongo = MongoStarter.new
+  end
+
+  def self.shutdown
+    @@mongo.cleanup
+  end
+
   context "Mongo Connection Failure" do
     setup do
-      @mongo = MongoStarter.new
-      @mongo.start
+      @@mongo.start
 
       @connection = retry_until_ok { Mongo::Connection.new("localhost", MongoStarter::PORT) }
+      @connection.drop_database TEST_DB
+      @connection.drop_database TEST_DB_2
       @connection.stubs(:database_names).returns([TEST_DB, TEST_DB_2])
-      @test_coll1 = @connection.db(TEST_DB).create_collection("test1")
 
+      @test_coll1 = @connection[TEST_DB]["test1"]
       @test_coll1_ns = "#{TEST_DB}.#{@test_coll1.name}"
 
       @solr = mock()
@@ -53,14 +50,10 @@ class ExceptionHandlingTest < Test::Unit::TestCase
             { :ns_set => basic_ns_set, :logger => DEFAULT_LOGGER })
     end
 
-    teardown do
-      @mongo.cleanup
-    end
-
     should "succesfully dump db contents after failure" do
       @test_coll1.insert({ :foo => "bar"})
       @test_coll1.db.get_last_error
-      @mongo.stop
+      @@mongo.stop
 
       @solr.expects(:add).once
       @solr.expects(:commit).at_least(1)
@@ -69,7 +62,7 @@ class ExceptionHandlingTest < Test::Unit::TestCase
         @solr_sync.sync { |mode, count| break if mode == :finished_dumping }
       end
 
-      @mongo.start
+      @@mongo.start
       sync_thread.join
     end
 
@@ -79,9 +72,9 @@ class ExceptionHandlingTest < Test::Unit::TestCase
 
       @solr_sync.sync do |mode, count|
         if mode == :finished_dumping then
-          @mongo.stop
+          @@mongo.stop
         elsif mode == :excep then
-          @mongo.start
+          @@mongo.start
 
           @solr.expects(:add).once
           @solr.expects(:commit).at_least(1)
@@ -105,7 +98,7 @@ class ExceptionHandlingTest < Test::Unit::TestCase
 
       @solr_sync.sync do |mode, count|
         if mode == :finished_dumping then
-          @mongo.stop
+          @@mongo.stop
 
           @solr.expects(:add).once
           @solr.expects(:commit).at_least(1)
@@ -116,7 +109,7 @@ class ExceptionHandlingTest < Test::Unit::TestCase
             false
           end
 
-          @mongo.start
+          @@mongo.start
         end
       end
     end

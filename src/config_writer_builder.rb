@@ -13,7 +13,7 @@ module MongoSolr
     #
     # @return [MongoSolr::ConfigWriter]
     def create_writer(solr_url)
-      ConfigWriter.new(solr_url, @coll, @logger)
+      ConfigWriter.new(@coll, @logger, solr_url)
     end
   end
 end
