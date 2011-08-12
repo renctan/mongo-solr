@@ -45,3 +45,7 @@ The integration test uses the following assumptions:
    to understand it.
 5. There is no other process accessing the database server.
 
+## Note on running the tests
+
+The tests uses the test-unit gem instead of one built-in to the MRI library. It also uses Mocha (v0.9.12), which unfortunately breaks the test-unit (v2.3.1) result reporting. The dots does not appear on successful test, but the E and F still appears. The one line summary still shows the correct results but will always display "0% passed" even if all the tests passed.
+
