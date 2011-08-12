@@ -18,6 +18,8 @@ module MongoSolr
       options.interval = 1
       options.config_interval = 1
       options.err_interval = 10
+      options.cleanup_interval = 3600
+      options.cleanup_old_age = 172800
       options.auto_dump = false
       options.auth = {}
 
@@ -75,6 +77,23 @@ module MongoSolr
                 "The default behavior without this option",
                 "is to raise an exception and terminate.") do
           options.auto_dump = true
+        end
+
+        opts.separator ""
+        opts.on("--cleanup interval,old_age", Array,
+                "Cleanup interval for Solr documents marked",
+                "for deletion. Interval is the time (sec)",
+                "between each cleanup and old_age is the",
+                "time (sec) where a document for deletion",
+                "is considered old enough and will be",
+                "deleted. Default: " +
+                "#{options.cleanup_interval}, #{options.cleanup_old_age}") do |list|
+          if list.size != 2 then
+            puts "Wrong number of arguments for cleanup: parameter ignored."
+          else
+            options.cleanup_interval = list.first.to_i
+            options.cleanup_old_age = list[1].to_i
+          end
         end
 
 #        opts.separator ""

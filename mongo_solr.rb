@@ -24,6 +24,7 @@ require_relative "src/config_writer"
 require_relative "src/config_format_reader"
 require_relative "src/solr_config_const"
 require_relative "src/factory"
+require_relative "src/cleanup"
 
 # Checks whether a connection is connected to a mongos process
 #
@@ -62,6 +63,7 @@ if $0 == __FILE__ then
 
   config_db_name = MongoDBConfigSource.get_config_db_name(mongo)
   config_coll = mongo[config_db_name][SolrConfigConst::CONFIG_COLLECTION_NAME]
+  config_source = MongoDBConfigSource.new(config_coll, logger)
 
   if is_mongos?(mongo) then
     config_reader
@@ -77,13 +79,15 @@ if $0 == __FILE__ then
       oplog_coll = get_oplog_collection(mongo, :master_slave)
     end
 
-    config_source = MongoDBConfigSource.new(config_coll, logger)
-
     daemon = Daemon.new
     daemon_thread = Thread.start do
       daemon.run(mongo, oplog_coll, config_source, Factory.new(ConfigFormatReader),
                  Factory.new(ConfigWriter, config_coll, logger), daemon_opt)
     end
+  end
+
+  Thread.start do
+    Cleanup.run(config_source, options.cleanup_interval, options.cleanup_old_age)
   end
 
   exit_handler = Proc.new do
