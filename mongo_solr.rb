@@ -20,8 +20,20 @@ require_relative "src/util"
 require_relative "src/daemon"
 require_relative "src/argument_parser"
 require_relative "src/mongodb_config_source"
-require_relative "src/config_writer_builder"
+require_relative "src/config_writer"
+require_relative "src/config_format_reader"
 require_relative "src/solr_config_const"
+require_relative "src/factory"
+
+# Checks whether a connection is connected to a mongos process
+#
+# @param mongo [Mongo::Connection] The connection to check.
+#
+# @return [Boolean] true if connected to a mongos
+def is_mongos?(mongo)
+  reply = mongo["local"].command({ "isdbgrid" => 1 }, { :check_response => false })
+  reply["errmsg"].nil?
+end
 
 if $0 == __FILE__ then
   include MongoSolr
@@ -38,19 +50,7 @@ if $0 == __FILE__ then
 
   authenticate_to_db(mongo, options.auth)
 
-  if mongo.is_a? Mongo::ReplSetConnection then
-    puts "Connected to a replica set @ #{mongo.host}:#{mongo.port}"
-    oplog_coll = get_oplog_collection(mongo, :repl_set)
-  else
-    oplog_coll = get_oplog_collection(mongo, :master_slave)
-  end
-
   logger = Logger.new(STDOUT)
-
-  config_db_name = MongoDBConfigSource.get_config_db_name(mongo)
-  config_coll = mongo[config_db_name][SolrConfigConst::CONFIG_COLLECTION_NAME]
-  config_reader = MongoDBConfigSource.new(config_coll, logger)
-  config_writer_builder = ConfigWriterBuilder.new(config_coll, logger)
 
   daemon_opt = {
     :config_poll_interval => options.config_interval,
@@ -60,6 +60,44 @@ if $0 == __FILE__ then
     :logger => logger
   }
 
-  Daemon.run(mongo, oplog_coll, config_reader, config_writer_builder, daemon_opt)
+  config_db_name = MongoDBConfigSource.get_config_db_name(mongo)
+  config_coll = mongo[config_db_name][SolrConfigConst::CONFIG_COLLECTION_NAME]
+
+  if is_mongos?(mongo) then
+    config_reader
+    config_writer_builder
+    daemon
+
+    # TODO: implement
+  else
+    if mongo.is_a? Mongo::ReplSetConnection then
+      puts "Connected to a replica set @ #{mongo.host}:#{mongo.port}"
+      oplog_coll = get_oplog_collection(mongo, :repl_set)
+    else
+      oplog_coll = get_oplog_collection(mongo, :master_slave)
+    end
+
+    config_source = MongoDBConfigSource.new(config_coll, logger)
+
+    daemon = Daemon.new
+    daemon_thread = Thread.start do
+      daemon.run(mongo, oplog_coll, config_source, Factory.new(ConfigFormatReader),
+                 Factory.new(ConfigWriter, config_coll, logger), daemon_opt)
+    end
+  end
+
+  exit_handler = Proc.new do
+    logger.info("Recieved terminating signal: shutting down the daemon...")
+    daemon.stop!
+    daemon_thread.join
+    logger.info("Daemon terminated.")
+    exit
+  end
+
+  Signal.trap("SIGTERM", exit_handler)
+  Signal.trap("SIGINT", exit_handler)
+  # Do not handle SIGKILL, have it as an option to allow user to force terminatation.
+
+  sleep # Do nothing. Wait for SIGTERM/SIGINT.
 end
 

@@ -50,6 +50,9 @@ class SmokeTest < Test::Unit::TestCase
       @test_coll = @mongo_conn[TEST_DB]["user"]
       @solr = RSolr.connect
       @js = JSPluginWrapper.new("localhost", MongoStarter::PORT)
+
+      @mock = mock()
+      @mock.expects(:daemon_end).once
     end
 
     teardown do
@@ -72,6 +75,7 @@ class SmokeTest < Test::Unit::TestCase
 
         assert(result, "Failed to index to Solr within #{TIMEOUT} seconds")
         assert_equal("hello", solr_doc["x"])
+        @mock.daemon_end
       end
     end
 
@@ -102,6 +106,7 @@ class SmokeTest < Test::Unit::TestCase
         end
 
         assert(result, "Failed to update Solr within #{TIMEOUT} seconds")
+        @mock.daemon_end
       end
     end
 
@@ -135,6 +140,7 @@ class SmokeTest < Test::Unit::TestCase
         end
 
         assert(result, "Failed to update Solr within #{TIMEOUT} seconds")
+        @mock.daemon_end
       end
     end
   end

@@ -5,7 +5,11 @@ class DummyClass
   attr_reader :a, :b, :c, :d
 
   def initialize(a, b, c, d)
-    @a, @b, @c, @d = a, b, c, d
+    @a = a
+    @b = b
+    @c = c
+    @d = d
+
     yield if block_given?
   end
 end
@@ -17,6 +21,14 @@ class ZeroArgs
 
   def initialize
     @val = ONLY_VAL
+  end
+end
+
+class OneArg
+  attr_reader :val
+
+  def initialize(val)
+    @val = val
   end
 end
 
@@ -106,6 +118,55 @@ class FactoryTest < Test::Unit::TestCase
     obj = factory.create
 
     assert_equal(ZeroArgs::ONLY_VAL, obj.val)
+  end
+
+  should "properly handle one arg classes with partial application (non-array)" do
+    val = "hilfe!"
+    factory = Factory.new(OneArg, val)
+    obj = factory.create
+
+    assert_equal(val, obj.val)
+  end
+
+  should "properly handle one arg classes with partial application (array)" do
+    array = [1, 2, 3]
+    factory = Factory.new(OneArg, array)
+    obj = factory.create
+
+    assert_equal(array, obj.val)
+  end
+
+  should "properly handle one arg classes without partial application (non-array)" do
+    val = "hilfe!"
+    factory = Factory.new(OneArg)
+    obj = factory.create val
+
+    assert_equal(val, obj.val)
+  end
+
+  should "properly handle one arg classes without partial application (array)" do
+    array = [1, 2, 3]
+    factory = Factory.new(OneArg)
+    obj = factory.create array
+
+    assert_equal(array, obj.val)
+  end
+
+  should "maintain the original partially applied arguments at the constructor" do
+    factory = Factory.new(DummyClass, 1, 2, 3)
+    obj = factory.create(4)
+
+    assert_equal(1, obj.a)
+    assert_equal(2, obj.b)
+    assert_equal(3, obj.c)
+    assert_equal(4, obj.d)
+
+    obj = factory.create("x")
+
+    assert_equal(1, obj.a)
+    assert_equal(2, obj.b)
+    assert_equal(3, obj.c)
+    assert_equal("x", obj.d)
   end
 end
 

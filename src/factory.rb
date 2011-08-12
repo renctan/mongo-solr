@@ -23,8 +23,16 @@ module MongoSolr
       end
     end
 
+    # Creates a new instance of the initialized class type by combining the partially
+    # initialized arguments with the currently given arguments and block
+    #
+    # @param args [Splat] The remaining arguments to apply after the ones given at the
+    #   constructor.
+    # @param block [Proc] A block to pass to the constructor.
+    #
+    # @return [Object] the new object created using the contructor of the initialized class.
     def create(*args, &block)
-      complete_args = @partial_args
+      complete_args = @partial_args.clone
       complete_args.concat(args)
       @klass.new(*complete_args, &block)
     end
