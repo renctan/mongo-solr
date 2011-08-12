@@ -53,7 +53,7 @@ class FactoryTest < Test::Unit::TestCase
   should "chain factories" do
     factory = Factory.new(DummyClass, 1)
     factory2 = Factory.new(factory, 2)
-    factory3 = Factory.new(factory, 3)
+    factory3 = Factory.new(factory2, 3)
 
     obj = factory3.create(4)
 
@@ -167,6 +167,41 @@ class FactoryTest < Test::Unit::TestCase
     assert_equal(2, obj.b)
     assert_equal(3, obj.c)
     assert_equal("x", obj.d)
+  end
+
+  should "properly chain with no partially applied arguments for 1 arg constructors" do
+    factory = Factory.new(OneArg)
+    factory2 = Factory.new(factory)
+
+    obj = factory.create([1, 2])
+    assert_equal([1, 2], obj.val)
+  end
+
+  should "maintain the original partially applied arguments with chaining" do
+    factory = Factory.new(DummyClass, 1, 2)
+    factory2 = Factory.new(factory, 3)
+    factory3 = Factory.new(factory, "x")
+
+    obj = factory.create("one", "two")
+
+    assert_equal(1, obj.a)
+    assert_equal(2, obj.b)
+    assert_equal("one", obj.c)
+    assert_equal("two", obj.d)
+
+    obj = factory2.create(4)
+
+    assert_equal(1, obj.a)
+    assert_equal(2, obj.b)
+    assert_equal(3, obj.c)
+    assert_equal(4, obj.d)
+
+    obj = factory3.create("y")
+
+    assert_equal(1, obj.a)
+    assert_equal(2, obj.b)
+    assert_equal("x", obj.c)
+    assert_equal("y", obj.d)
   end
 end
 

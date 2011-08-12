@@ -14,8 +14,7 @@ module MongoSolr
     #   of klass.
     def initialize(klass, *args)
       if klass.is_a? MongoSolr::Factory then
-        @partial_args = klass.partial_args
-        @partial_args.concat(args)
+        @partial_args = klass.partial_args + args
         @klass = klass.type
       else
         @klass = klass
@@ -32,8 +31,7 @@ module MongoSolr
     #
     # @return [Object] the new object created using the contructor of the initialized class.
     def create(*args, &block)
-      complete_args = @partial_args.clone
-      complete_args.concat(args)
+      complete_args = @partial_args + args
       @klass.new(*complete_args, &block)
     end
   end
