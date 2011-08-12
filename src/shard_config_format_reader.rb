@@ -25,10 +25,16 @@ module MongoSolr
         data = CheckpointData.new(@config_data.first[SolrConfigConst::COMMIT_TIMESTAMP_KEY])
 
         @config_data.each do |ns_entry|
-          namespace = ns_entry[SolrConfigConst::NS_KEY]
-          timestamp = ns_entry[SolrConfigConst::UPDATE_TIMESTAMP_KEY][@shard_id]
+          update_field = ns_entry[SolrConfigConst::UPDATE_TIMESTAMP_KEY]
 
-          data.set(namespace, timestamp)
+          unless update_field.nil? then
+            timestamp = update_field[@shard_id]
+
+            unless timestamp.nil? then
+              namespace = ns_entry[SolrConfigConst::NS_KEY]
+              data.set(namespace, timestamp)
+            end
+          end
         end
       end
 

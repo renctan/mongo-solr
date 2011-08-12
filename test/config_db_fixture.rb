@@ -91,6 +91,17 @@ class ConfigDBFixture
    }
   ]
 
+  # Config with no timestamp
+  SOLR_LOC_4 = "http://royal.chocolate.flush:123/solr"
+  CONFIG4 =
+  [
+   {
+     SolrConfigConst::SOLR_URL_KEY => SOLR_LOC_4,
+     SolrConfigConst::NS_KEY => "courses.doctoral",
+     SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
+   }
+  ]
+
   SHARD_1 = "shard0000"
   SHARD_2 = "myset"
 
@@ -203,6 +214,20 @@ class ConfigDBFixture
        SHARD_2 => BSON::Timestamp.new(321, 9999)
      },
      SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 }
+   }
+  ]
+
+  # Config with partial timestamp
+  SHARD_CONFIG4 =
+  [
+   {
+     SolrConfigConst::SOLR_URL_KEY => SOLR_LOC_4,
+     SolrConfigConst::COMMIT_TIMESTAMP_KEY => BSON::Timestamp.new(87654, 1),
+     SolrConfigConst::NS_KEY => "courses.doctoral",
+     SolrConfigConst::COLL_FIELD_KEY => { "address" => 1 },
+     SolrConfigConst::UPDATE_TIMESTAMP_KEY => {
+       SHARD_2 => BSON::Timestamp.new(4263897, 3452)
+     }
    }
   ]
 end
