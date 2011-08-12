@@ -4,6 +4,7 @@ require "forwardable"
 
 require_relative "solr_synchronizer"
 require_relative "config_format_reader"
+require_relative "shard_config_format_reader"
 require_relative "util"
 
 module MongoSolr
@@ -48,7 +49,7 @@ module MongoSolr
     # @param solr [MongoSolr::Daemon]
     def initialize(daemon, host, logger)
       @thread = nil
-      @daemon = deamon
+      @daemon = daemon
       @host = host
       @logger = logger
     end
@@ -134,12 +135,16 @@ module MongoSolr
               solr = RSolr.connect(:url => url)
               config_writer = config_writer_factory.create(url)
 
-              opt[:ns_set] = new_ns_set
-              opt[:checkpt] = new_checkpoint
-              opt[:name] = url
+              name = opt[:name] || ""
+              extra_opt = {
+                :ns_set => new_ns_set,
+                :checkpt => new_checkpoint,
+                :name => name + url
+              }
 
               solr_sync = SolrSyncThread.
-                new(SolrSynchronizer.new(solr, mongo, oplog_coll, config_writer, opt))
+                new(SolrSynchronizer.new(solr, mongo, oplog_coll, config_writer,
+                                         opt.merge(extra_opt)))
               solr_sync.start
             else
               solr_sync = nil
@@ -199,8 +204,8 @@ module MongoSolr
     #   to STDOUT.
     #
     # @see MongoSolr::Daemon#run for more recognized values for the opt parameter.
-    def self.run_w_shard(mongo, config_source, config_reader_factory,
-                         config_writer_factory, opt = {})
+    def run_w_shard(mongo, config_source, config_reader_factory,
+                    config_writer_factory, opt = {})
       @stop_mutex.synchronize { @stop = false }
 
       config_poll_interval = opt[:config_poll_interval] || 1
@@ -232,8 +237,8 @@ module MongoSolr
               end
 
               location, port = address.split(":")
-              shard = DaemonThread.new(Daemon.new(), host, logger)
-              shard_conn = auto_detect_replset(location, port)
+              shard_conn = Mongo::Connection.new(location, port)
+              shard_conn = upgrade_to_replset(shard_conn)
 
               if shard_conn.is_a? Mongo::ReplSetConnection then
                 oplog_coll = get_oplog_collection(shard_conn, :repl_set)
@@ -241,8 +246,16 @@ module MongoSolr
                 oplog_coll = get_oplog_collection(shard_conn, :master_slave)
               end
 
-              shard.start(mongo, oplog_coll, Factory.new(config_reader_factory, shard_id),
-                          Factory.new(config_writer_factory, shard_id), opt)
+              name = opt[:name] || ""
+              extra_opt = {
+                :name => name + "[#{shard_id}]"
+              }
+
+              shard = DaemonThread.new(Daemon.new(), host, logger)
+              shard.start(mongo, oplog_coll, config_source,
+                          Factory.new(config_reader_factory, shard_id),
+                          Factory.new(config_writer_factory, shard_id),
+                          opt.merge(extra_opt))
             end
 
             new_shard_set[shard_id] = shard

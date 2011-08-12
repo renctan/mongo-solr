@@ -6,7 +6,7 @@ module MongoSolr
     extend Forwardable
 
     attr_reader :commit_ts
-    def_delegators :@namespace_list, :each, :[]
+    def_delegators :@namespace_list, :each, :[], :empty?
     def_delegator :@namespace_list, :[]=, :set
 
     # @param commit_timestamp [BSON::Timestamp] The commit timestamp 

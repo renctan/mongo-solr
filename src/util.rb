@@ -99,16 +99,13 @@ module MongoSolr
       return db_name, collection_name
     end
 
-    # Attempts to check whether the connection is to a replica set.
+    # Attempts to upgrade a normal connection to a replica set connection.
     #
-    # @param hostname [String] The hostname of the mongod instance to connect to.
-    # @param port [Number] The port number of the mongod instance to connect to.
+    # @param mongo [Mongo::Connection] The MongoDB connection to upgrade.
     #
     # @return [Mongo::Connection, Mongo::ReplSetConnection] the a replica set connection
     #   if the given host is a replica set member or a normal connection otherwise.
-    def auto_detect_replset(hostname, port)
-      mongo = Mongo::Connection.new(hostname, port)
-
+    def upgrade_to_replset(mongo)
       begin
         stat = mongo["admin"].command({ :replSetGetStatus => 1 })
         member_list = stat["members"].map do |member|

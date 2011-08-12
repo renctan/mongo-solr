@@ -7,11 +7,11 @@ module MongoSolr
   class ShardConfigWriter < ConfigWriter
     include Util
 
-    # @param shard_id [String] A unique identifier for a shard.
-    # @param solr_loc [String] The location of the Solr Server
     # @param coll [Mongo::Collection] The configuration database collection.
     # @param logger [Logger] A logger object to use for logging. Can be nil.
-    def initialize(shard_id, coll, logger, solr_loc)
+    # @param shard_id [String] A unique identifier for a shard.
+    # @param solr_loc [String] The location of the Solr Server
+    def initialize(coll, logger, shard_id, solr_loc)
       @shard_id = shard_id
       super(coll, logger, solr_loc)
     end

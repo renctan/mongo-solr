@@ -15,7 +15,7 @@ class ShardConfigWriterTest < Test::Unit::TestCase
     setup do
       @config_coll = DB_CONNECTION.db(TEST_DB).create_collection("config")
       @config_coll.insert(SAMPLE_DOCS)
-      @config_writer = MongoSolr::ShardConfigWriter.new(SHARD_ID, @config_coll, nil, SOLR_LOC)
+      @config_writer = MongoSolr::ShardConfigWriter.new(@config_coll, nil, SHARD_ID, SOLR_LOC)
     end
 
     teardown do

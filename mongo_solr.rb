@@ -21,6 +21,7 @@ require_relative "src/daemon"
 require_relative "src/argument_parser"
 require_relative "src/mongodb_config_source"
 require_relative "src/config_writer"
+require_relative "src/shard_config_writer"
 require_relative "src/config_format_reader"
 require_relative "src/solr_config_const"
 require_relative "src/factory"
@@ -32,7 +33,7 @@ require_relative "src/cleanup"
 #
 # @return [Boolean] true if connected to a mongos
 def is_mongos?(mongo)
-  reply = mongo["local"].command({ "isdbgrid" => 1 }, { :check_response => false })
+  reply = mongo["admin"].command({ "isdbgrid" => 1 }, { :check_response => false })
   reply["errmsg"].nil?
 end
 
@@ -43,10 +44,14 @@ if $0 == __FILE__ then
   options = ArgumentParser.parse_options(ARGV)
 
   mongo_loc = options.mongo_loc
+  connected_to_mongos = false
+
   if (mongo_loc =~ /^mongodb:\/\//) then
     mongo = Mongo::Connection.from_uri(mongo_loc)
   else
-    mongo = auto_detect_replset(mongo_loc, options.mongo_port)
+    mongo = Mongo::Connection.new(mongo_loc, options.mongo_port)
+    connected_to_mongos = is_mongos?(mongo)
+    mongo = upgrade_to_replset mongo unless connected_to_mongos
   end
 
   authenticate_to_db(mongo, options.auth)
@@ -65,12 +70,17 @@ if $0 == __FILE__ then
   config_coll = mongo[config_db_name][SolrConfigConst::CONFIG_COLLECTION_NAME]
   config_source = MongoDBConfigSource.new(config_coll, logger)
 
-  if is_mongos?(mongo) then
-    config_reader
-    config_writer_builder
-    daemon
+  daemon = Daemon.new
 
-    # TODO: implement
+  if connected_to_mongos then
+    puts "Connected to a mongos @ #{mongo.host}:#{mongo.port}"
+
+    daemon_thread = Thread.start do
+      daemon.run_w_shard(mongo, config_source,
+                         Factory.new(ShardConfigFormatReader),
+                         Factory.new(ShardConfigWriter, config_coll, logger),
+                         daemon_opt)
+    end
   else
     if mongo.is_a? Mongo::ReplSetConnection then
       puts "Connected to a replica set @ #{mongo.host}:#{mongo.port}"
@@ -79,7 +89,6 @@ if $0 == __FILE__ then
       oplog_coll = get_oplog_collection(mongo, :master_slave)
     end
 
-    daemon = Daemon.new
     daemon_thread = Thread.start do
       daemon.run(mongo, oplog_coll, config_source, Factory.new(ConfigFormatReader),
                  Factory.new(ConfigWriter, config_coll, logger), daemon_opt)

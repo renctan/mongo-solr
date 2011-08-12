@@ -26,7 +26,8 @@ class ReplicaSetDetectionTest < Test::Unit::TestCase
     end
 
     should "return normal connection" do
-      connection = auto_detect_replset("localhost", MongoStarter::PORT)
+      mongo = Mongo::Connection.new("localhost", MongoStarter::PORT)
+      connection = upgrade_to_replset mongo
       assert(connection.is_a?(Mongo::Connection), "Connection is a #{connection.class}!")
     end
   end
@@ -45,7 +46,8 @@ class ReplicaSetDetectionTest < Test::Unit::TestCase
     end
 
     should "return replset connection" do
-      connection = auto_detect_replset(@rs.host, @rs.ports[1])
+      mongo = Mongo::Connection.new(@rs.host, @rs.ports[1])
+      connection = upgrade_to_replset mongo
       assert(connection.is_a?(Mongo::ReplSetConnection),
              "Connection is a #{connection.class}!")
     end
