@@ -119,7 +119,6 @@ class ReplSetManager
 
   def kill(node, signal=2)
     pid = @mongods[node]['pid']
-
     `kill -#{signal} #{@mongods[node]['pid']}`
     @mongods[node]['up'] = false
     sleep(1)
@@ -149,16 +148,23 @@ class ReplSetManager
     return node
   end
 
-  def restart_killed_nodes
+  # @param del_contents [Boolean] Deletes the data directory of downed members if true.
+  #   This can be used to forcibly cause the secondary to resync with the primary.
+  def restart_killed_nodes(del_contents = false)
     nodes = @mongods.keys.select do |key|
       @mongods[key]['up'] == false
     end
 
     nodes.each do |node|
+      if del_contents then
+        system("rm -rf #{@mongods[node]['db_path']}")
+        system("mkdir -p #{@mongods[node]['db_path']}")
+      end
+
       start(node)
     end
 
-    ensure_up
+    stat = ensure_up
   end
 
   def get_node_from_port(port)

@@ -34,7 +34,7 @@ class ReplicaSetTest < Test::Unit::TestCase
 
   context "SolrSynchronizer rollbacks" do
     setup do
-      @@rs.restart_killed_nodes
+      @@rs.restart_killed_nodes(true)
 
       # Use send to access these private methods. The reason for getting this values now
       # is because get_node_with_state will call ensure up, which will fail if some of the
@@ -75,16 +75,18 @@ class ReplicaSetTest < Test::Unit::TestCase
 
       @solr_sync.sync do |mode, count|
         if mode == :finished_dumping then
-          doc_id = @test_coll.insert({ :x => 1 })
-          @test_coll.db.get_last_error({ :w => 2, :wtimeout => 5000 })
+          doc_id = @test_coll.insert({ :upx => 1 })
+          resp = @test_coll.db.get_last_error({ :w => 3, :wtimeout => 5000 })
+          assert(resp["ok"], "getLastError failure: #{resp.inspect}")
         elsif mode == :sync then
           total_docs_updated += count
 
           if (total_docs_updated == 1 and not stage_one_done) then
             @@rs.kill(@secondary_node)
 
-            @test_coll.update({ :x => 1 }, { "$set" => { :y => 2 }})
-            @test_coll.db.get_last_error({ :wtimeout => 5000 })
+            @test_coll.update({ :upx => 1 }, { "$set" => { :upx => 300, :y => 2 }})
+            resp = @test_coll.db.get_last_error({ :wtimeout => 5000 })
+            assert(resp["ok"], "getLastError failure: #{resp.inspect}")
             stage_one_done = true
           elsif (total_docs_updated == 2 and not stage_two_done) then
             @@rs.kill(@primary_node)
@@ -98,9 +100,10 @@ class ReplicaSetTest < Test::Unit::TestCase
 
       solr_doc = @solr.select({ :params => { :q => "_id:#{doc_id}",
                                   :rows => 1 }})
+      value = solr_doc["response"]["docs"].first["upx"]
 
       # Note: all dynamic field values are stored as text type in the Solr Server
-      assert_equal("1", solr_doc["response"]["docs"].first["x"])
+      assert_equal("1", value, "Solr query response: #{solr_doc.inspect}")
     end
 
     should "rollback inserts on Solr after failover to secondary" do
@@ -110,7 +113,7 @@ class ReplicaSetTest < Test::Unit::TestCase
       @solr_sync.sync do |mode, count|
         if mode == :finished_dumping then
           @@rs.kill(@secondary_node)
-          doc_id = @test_coll.insert({ :x => 1 })
+          doc_id = @test_coll.insert({ :inx => 1 })
         elsif mode == :sync and count == 1 and !stage_one_done then
           @@rs.kill(@primary_node)
           @@rs.start(@secondary_node)
@@ -122,21 +125,22 @@ class ReplicaSetTest < Test::Unit::TestCase
 
       solr_doc = @solr.select({ :params => { :q => "_id:#{doc_id}",
                                   :rows => 1 }})
-
-      assert(solr_doc["response"]["docs"].first[SolrSynchronizer::SOLR_DELETED_FIELD])
+      deleted = solr_doc["response"]["docs"].first[SolrSynchronizer::SOLR_DELETED_FIELD]
+      assert(deleted, "Doc not deleted. Solr query response: #{solr_doc.inspect}")
     end
 
     should "rollback deletes on Solr after failover to secondary" do
       total_docs_updated = 0
       doc_id = 0
-      doc = { :x => 1 }
+      doc = { :delx => 1 }
       stage_one_done = false
       stage_two_done = false
 
       @solr_sync.sync do |mode, count|
         if mode == :finished_dumping then
           doc_id = @test_coll.insert(doc)
-          @test_coll.db.get_last_error({ :w => 2, :wtimeout => 5000 })
+          resp = @test_coll.db.get_last_error({ :w => 3, :wtimeout => 5000 })
+          assert(resp["ok"], "getLastError failure: #{resp.inspect}")
         elsif mode == :sync then
           total_docs_updated += count
 
@@ -177,7 +181,7 @@ class ReplicaSetTest < Test::Unit::TestCase
 
   context "smoke test" do
     setup do
-      @@rs.restart_killed_nodes
+      @@rs.restart_killed_nodes(true)
 
       @conn_str = "mongodb://#{@@rs.host}:#{@@rs.ports[0]},#{@@rs.host}:#{@@rs.ports[1]}"
       @mongo = Mongo::ReplSetConnection.new([@@rs.host, @@rs.ports[0]])
