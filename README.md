@@ -1,6 +1,6 @@
 # Overview
 
-A simple Ruby script for indexing the entire contents of a MongoDB instance (excluding administrative collections) to Solr. Since the scripts relies on polling the oplogs to synchronize the contents of the database with Solr, the database needs to be running on master/slave or replica set configuration.
+A simple Ruby script for indexing the contents of a MongoDB instance to Solr. Since the scripts relies on polling the oplogs to synchronize the contents of the database with Solr, the database needs to be running on master/slave or replica set configuration.
 
 Please check out the wiki for more details about this project.
 
@@ -11,6 +11,11 @@ Please check out the wiki for more details about this project.
 * Includes a client plugin for Mongo shell.
 * Supports indexing to multiple Solr Servers.
 * Supports connection to a replica set instance.
+
+# Known issues
+
+* There is an issue with the BSON extension binary that comes with the Ruby driver that will cause the daemon to run in unexpected ways. This is a machine dependent bug and to check if you're machine is susceptible to this issue, try executing this (snippet)[https://gist.github.com/92eb07eebfe362a7f97c] in the Ruby interpreter. The output of BSON Ruby and C should be the same.
+* The daemon does not fully support performing syncs on a sharded cluster as of the moment. It does work fine as long as a chunk migration does not happen, which is impractical in practice.
 
 # Ruby version
 
@@ -34,7 +39,7 @@ Note: You can get bundle from [here](http://gembundler.com/). And make sure that
 
     rake test:all
 
-## Integration and JS Test Assumptions
+## Test Assumptions
 
 The integration test uses the following assumptions:
 
@@ -44,6 +49,8 @@ The integration test uses the following assumptions:
 4. The test sets the output of the logger to "/dev/null" so the system running it should be able
    to understand it.
 5. There is no other process accessing the database server.
+
+The slow tests needs a Solr Server running on the default http://localhost:8983/solr. However, it can delete the entire contents of the server so don't use a server with important data when running the tests.
 
 ## Note on running the tests
 
