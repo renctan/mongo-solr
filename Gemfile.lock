@@ -9,6 +9,7 @@ GEM
     rsolr (1.0.2)
       builder (>= 2.1.2)
     shoulda (2.11.3)
+    test-unit (2.3.1)
 
 PLATFORMS
   ruby
@@ -18,3 +19,4 @@ DEPENDENCIES
   mongo
   rsolr
   shoulda
+  test-unit (>= 2.3.0)
