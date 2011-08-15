@@ -18,7 +18,7 @@ module MongoSolr
         @klass = klass.type
       else
         @klass = klass
-        @partial_args = *args
+        @partial_args = args
       end
     end
 

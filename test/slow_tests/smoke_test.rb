@@ -9,8 +9,8 @@ require "rsolr"
 require "#{PROJ_SRC_PATH}/util"
 require_relative("../repl_set_manager")
 require_relative("../js_plugin_wrapper")
-require_relative "#{PROJ_SRC_PATH}/mongodb_config_source"
-require_relative "#{PROJ_SRC_PATH}/solr_config_const"
+require "#{PROJ_SRC_PATH}/mongodb_config_source"
+require "#{PROJ_SRC_PATH}/solr_config_const"
 
 # Simple test cases for testing the MongoSolr daemon and the mongo shell plugin.
 class SmokeTest < Test::Unit::TestCase
