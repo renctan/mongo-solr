@@ -11,9 +11,9 @@ module MongoSolr
     # @param logger [Logger] A logger object to use for logging. Can be nil.
     # @param shard_id [String] A unique identifier for a shard.
     # @param solr_loc [String] The location of the Solr Server
-    def initialize(coll, logger, shard_id, solr_loc)
+    def initialize(coll, shard_id, solr_loc)
       @shard_id = shard_id
-      super(coll, logger, solr_loc)
+      super(coll, solr_loc)
     end
 
     # @Override
@@ -25,16 +25,39 @@ module MongoSolr
     # @param namespace [String] The whole namespace name of the collection to update.
     # @param new_timestamp [BSON::Timestamp] The new timestamp
     def update_timestamp(namespace, new_timestamp)
-      begin
-        key = "#{SolrConfigConst::UPDATE_TIMESTAMP_KEY}.#{@shard_id}"
+      key = "#{SolrConfigConst::UPDATE_TIMESTAMP_KEY}.#{@shard_id}"
 
-        @coll.update({ SolrConfigConst::SOLR_URL_KEY => @solr_loc,
-                       SolrConfigConst::NS_KEY => namespace
-                     },
-                     { "$set" => { key => new_timestamp }})
-      rescue => e
-        @logger.error get_full_exception_msg(e) unless @logger.nil?
-      end
+      @coll.update({ SolrConfigConst::SOLR_URL_KEY => @solr_loc,
+                     SolrConfigConst::NS_KEY => namespace
+                   },
+                   { "$set" => { key => new_timestamp }})
+    end
+
+    # @Override
+    def update_total_dump_count(namespace, count)
+      key = "#{SolrConfigConst::TOTAL_TO_DUMP_KEY}.#{@shard_id}"
+      @coll.update({ SolrConfigConst::SOLR_URL_KEY => @solr_loc,
+                     SolrConfigConst::NS_KEY => namespace
+                   },
+                   { "$set" => { key => count }})
+    end
+
+    # @Override
+    def reset_dump_count(namespace)
+      key = "#{SolrConfigConst::DOCS_DUMPED_KEY}.#{@shard_id}"
+      @coll.update({ SolrConfigConst::SOLR_URL_KEY => @solr_loc,
+                     SolrConfigConst::NS_KEY => namespace
+                   },
+                   { "$set" => { key => 0 }})
+    end
+
+    # @Override
+    def increment_dump_count(namespace)
+      key = "#{SolrConfigConst::DOCS_DUMPED_KEY}.#{@shard_id}"
+      @coll.update({ SolrConfigConst::SOLR_URL_KEY => @solr_loc,
+                     SolrConfigConst::NS_KEY => namespace
+                   },
+                   { "$inc" => { key => 1 }})
     end
   end
 end

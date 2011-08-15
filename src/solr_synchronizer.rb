@@ -274,17 +274,25 @@ module MongoSolr
       db_name, coll = get_db_and_coll_from_ns(namespace)
 
       retry_until_ok do
-        @db_connection[db_name][coll].find().each do |doc|
+        cursor = @db_connection[db_name][coll].find()
+        @config_writer.update_total_dump_count(namespace, cursor.count)
+        @config_writer.reset_dump_count(namespace)
+
+        cursor.each do |doc|
           @solr.add(prepare_solr_doc(doc, namespace, timestamp))
           # Do not update commit timestamp here since the stream of data from the
           # database is not guaranteed to be sequential in time.
+
+          @config_writer.increment_dump_count(namespace)
         end
       end
 
       @solr.commit
 
-      @config_writer.update_timestamp(namespace, timestamp)
-      @config_writer.update_commit_timestamp(timestamp) 
+      retry_until_ok do
+        @config_writer.update_timestamp(namespace, timestamp)
+        @config_writer.update_commit_timestamp(timestamp) 
+      end
 
       @logger.info "#{@name}: Finished dumping #{namespace}"
     end
@@ -309,7 +317,7 @@ module MongoSolr
         when "i" then
           @logger.info "#{@name}: adding #{doc.inspect}"
           @solr.add(prepare_solr_doc(doc, namespace, timestamp))
-          @config_writer.update_timestamp(namespace, timestamp)
+          retry_until_ok { @config_writer.update_timestamp(namespace, timestamp) }
 
         when "u" then
           # Batch the documents that needs a new update to minimize DB roundtrips.
@@ -332,7 +340,7 @@ module MongoSolr
           new_doc[SOLR_DELETED_FIELD] = true
           @solr.add(new_doc)
 
-          @config_writer.update_timestamp(namespace, timestamp)
+          retry_until_ok { @config_writer.update_timestamp(namespace, timestamp) }
 
         when "n" then
           # NOOP: do nothing
@@ -353,7 +361,7 @@ module MongoSolr
             @logger.info "#{@name}: updating #{doc.inspect}"
             @solr.add(prepare_solr_doc(doc, namespace, timestamp))
             # Use the last timestamp from oplog_doc_entries.
-            @config_writer.update_timestamp(namespace, timestamp)
+            retry_until_ok { @config_writer.update_timestamp(namespace, timestamp) }
 
             # Remove from the set so there will be less documents to update
             # when an exception occurs and this block is executed again
@@ -363,7 +371,9 @@ module MongoSolr
       end
 
       @solr.commit
-      @config_writer.update_commit_timestamp(timestamp) if do_timestamp_commit
+      if do_timestamp_commit then
+        retry_until_ok { @config_writer.update_commit_timestamp(timestamp) }
+      end
     end
 
     # Helper method for determining whether to apply the oplog entry changes to Solr.
@@ -675,7 +685,7 @@ module MongoSolr
         end
       else
         # No new ops since last update on Solr. Advance to the end timestamp.
-        @config_writer.update_timestamp(namespace, end_ts)
+        retry_until_ok { @config_writer.update_timestamp(namespace, end_ts) }
       end
     end
 
@@ -844,7 +854,7 @@ module MongoSolr
         end
 
         @solr.commit
-        @config_writer.update_commit_timestamp(rollback_cutoff_timestamp)
+        retry_until_ok { @config_writer.update_commit_timestamp(rollback_cutoff_timestamp) }
 
         return rollback_cutoff_timestamp
       end

@@ -78,7 +78,7 @@ if $0 == __FILE__ then
     daemon_thread = Thread.start do
       daemon.run_w_shard(mongo, config_source,
                          Factory.new(ShardConfigFormatReader),
-                         Factory.new(ShardConfigWriter, config_coll, logger),
+                         Factory.new(ShardConfigWriter, config_coll),
                          daemon_opt)
     end
   else
@@ -91,7 +91,7 @@ if $0 == __FILE__ then
 
     daemon_thread = Thread.start do
       daemon.run(mongo, oplog_coll, config_source, Factory.new(ConfigFormatReader),
-                 Factory.new(ConfigWriter, config_coll, logger), daemon_opt)
+                 Factory.new(ConfigWriter, config_coll), daemon_opt)
     end
   end
 
