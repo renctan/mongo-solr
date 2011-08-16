@@ -4,7 +4,6 @@
 
 require File.expand_path("../../test_helper", __FILE__)
 
-require "mongo"
 require "rsolr"
 require "#{PROJ_SRC_PATH}/util"
 require_relative("../repl_set_manager")
