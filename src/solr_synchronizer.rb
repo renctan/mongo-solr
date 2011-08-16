@@ -2,6 +2,7 @@ require "rubygems"
 require "mongo"
 require "set"
 require "logger"
+require "hamster"
 
 require_relative "document_transform"
 require_relative "exception"
@@ -67,7 +68,8 @@ module MongoSolr
 
       # The set of collections to listen to for updates in the oplogs.
       ns_set = opt[:ns_set] || {}
-      @ns_set = MongoSolr::SynchronizedHash.new(ns_set)
+      @ns_set = Hamster.hash(ns_set)
+      @checkpoint = opt[:checkpt]
 
       # The oplog data for collections that are still in the process of dumping.
       @oplog_backlog = MongoSolr::SynchronizedHash.new
@@ -75,7 +77,6 @@ module MongoSolr
       # Locks should be taken in this order to avoid deadlock
       @stop_mutex = Mutex.new
       @synching_mutex = Mutex.new
-      @checkpoint_mutex = Mutex.new
 
       # implicit ns_set mutex
       # implicit synching_set mutex
@@ -87,9 +88,6 @@ module MongoSolr
       # True if this object is currently performing a sync with the database
       # protected by @synching_mutex
       @is_synching = false 
-
-      # protected by @checkpoint_mutex
-      @checkpoint = opt[:checkpt]
     end
 
     # Stop the sync operation
@@ -110,26 +108,20 @@ module MongoSolr
     # @param block [Proc] @see #dump_and_sync
     def update_config(opt = {}, &block)
       # Lock usage:
-      # 1. @checkpoint_mutex
-      # 2. @is_synching->@ns_set->add_collection_wo_lock()
+      # 1. @is_synching->add_collection_wo_lock()
 
       wait = opt[:wait] || false
       checkpoint_opt = opt[:checkpt]
 
-      unless checkpoint_opt.nil? then
-        @checkpoint_mutex.synchronize { @checkpoint = checkpoint_opt }
-      end
-
+      @checkpoint = checkpoint_opt unless checkpoint_opt.nil?
       new_ns_set = opt[:ns_set]
 
       unless new_ns_set.nil? then
         @synching_mutex.synchronize do
-          @ns_set.use do |ns_set, mutex|
-            diff = new_ns_set.reject { |k, v| ns_set.has_key?(k) }
-            add_namespace(diff, checkpoint_opt, @is_synching, wait, &block)
+          diff = new_ns_set.reject { |k, v| @ns_set.has_key?(k) }
+          add_namespace(diff, checkpoint_opt, @is_synching, wait, &block)
 
-            @ns_set = SynchronizedHash.new(new_ns_set)
-          end
+          @ns_set = Hamster.hash(new_ns_set)
         end
       end
     end
@@ -158,10 +150,8 @@ module MongoSolr
     def sync(&block)
       # Lock usage:
       # 1. @stop_mutex->@synching_mutex
-      # 2. @checkpoint_mutex
-      # 3. get_ns_set_snapshot()
-      # 4. insert_to_backlog()
-      # 5. stop_synching?()
+      # 2. insert_to_backlog()
+      # 3. stop_synching?()
 
       @stop_mutex.synchronize do
         @synching_mutex.synchronize do
@@ -174,12 +164,8 @@ module MongoSolr
         end
       end
 
-      checkpoint = @checkpoint_mutex.synchronize do
-        @checkpoint.clone unless @checkpoint.nil?
-      end
-
-      cursor = init_sync(checkpoint)
-      last_timestamp = (checkpoint.nil? ? nil : checkpoint.commit_ts)
+      last_timestamp = (@checkpoint.nil? ? nil : @checkpoint.commit_ts)
+      cursor = init_sync(@checkpoint)
 
       yield :finished_dumping, 0 if block_given?
 
@@ -254,8 +240,7 @@ module MongoSolr
     #
     # @return [Hash<String, Set<String> >] @see #new(opt[:ns_set])
     def get_ns_set_snapshot
-      # Lock usage: @ns_set
-      return @ns_set.use { |ns_set, mutex| ns_set.clone }
+      return @ns_set
     end
 
     alias_method :ns_set, :get_ns_set_snapshot
@@ -412,7 +397,7 @@ module MongoSolr
     end
 
     # Adds a collection without using a lock. Caller should be holding the lock for
-    # @synching_mutex and @ns_set while calling this method.
+    # @synching_mutex while calling this method.
     #
     # @param new_ns
     # @param checkpoint [MongoSolr::CheckpointData] The checkpoint data, ignored if nil.

@@ -1,4 +1,5 @@
 require "forwardable"
+require "hamster"
 
 module MongoSolr
   # A simple class for holding relevant checkpoint information to be used by SolrSynchronizer.
@@ -6,13 +7,14 @@ module MongoSolr
     extend Forwardable
 
     attr_reader :commit_ts
-    def_delegators :@namespace_list, :each, :[], :empty?
-    def_delegator :@namespace_list, :[]=, :set
+    def_delegators :@namespace_set, :each, :[], :empty?
 
     # @param commit_timestamp [BSON::Timestamp] The commit timestamp 
-    def initialize(commit_timestamp)
+    # @param namespace_set [Hash<String, BSON::Timestamp>] The structure that contains
+    #   the update timestamp for each namespace.
+    def initialize(commit_timestamp, namespace_set)
       @commit_ts = commit_timestamp
-      @namespace_list = {}
+      @namespace_set = Hamster.hash(namespace_set)
     end
   end
 end

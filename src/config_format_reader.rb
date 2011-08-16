@@ -47,16 +47,18 @@ module MongoSolr
       data = nil
 
       unless @config_data.empty? then
-        data = CheckpointData.new(@config_data.first[SolrConfigConst::COMMIT_TIMESTAMP_KEY])
-
+        ns_set = {}
         @config_data.each do |ns_entry|
           timestamp = ns_entry[SolrConfigConst::UPDATE_TIMESTAMP_KEY]
 
           unless timestamp.nil? then
             namespace = ns_entry[SolrConfigConst::NS_KEY]
-            data.set(namespace, timestamp)
+            ns_set[namespace] = timestamp
           end
         end
+
+        data = CheckpointData.new(@config_data.first[SolrConfigConst::COMMIT_TIMESTAMP_KEY],
+                                  ns_set)
       end
 
       return data

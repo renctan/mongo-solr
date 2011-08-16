@@ -405,8 +405,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         timestamp = @solr_sync.send :get_last_oplog_timestamp
 
         @test_coll1.insert({ :y => "why?" })
-        checkpoint_data = MongoSolr::CheckpointData.new(timestamp)
-        checkpoint_data.set(@test_coll1_ns, timestamp)
+        checkpoint_data = MongoSolr::CheckpointData.new(timestamp,
+                                                        { @test_coll1_ns => timestamp })
 
         @solr.expects(:add).once
         @solr.expects(:commit).at_least_once
@@ -423,9 +423,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         @test_coll1.db.get_last_error
         # hack for getting the last oplog timestamp
         timestamp = @solr_sync.send :get_last_oplog_timestamp
-
-        checkpoint_data = MongoSolr::CheckpointData.new(nil)
-        checkpoint_data.set(@test_coll1_ns, timestamp)
+        checkpoint_data = MongoSolr::CheckpointData.new(nil, { @test_coll1_ns => timestamp })
 
         @solr.expects(:add).twice
         @solr.expects(:commit).at_least_once
@@ -444,8 +442,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
         @test_coll1.insert({ :y => "why?" })
         @test_coll1.db.get_last_error
-        checkpoint_data = MongoSolr::CheckpointData.new(timestamp)
-        checkpoint_data.set(@test_coll1_ns, timestamp)
+        checkpoint_data = MongoSolr::CheckpointData.new(timestamp,
+                                                        { @test_coll1_ns => timestamp })
 
         @solr.expects(:add).times(3)
         @solr.expects(:commit).at_least_once
@@ -463,8 +461,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         timestamp = @solr_sync.send :get_last_oplog_timestamp
 
         @test_coll1.update({}, { "$set" => { :x => 2 } })
-        checkpoint_data = MongoSolr::CheckpointData.new(timestamp)
-        checkpoint_data.set(@test_coll1_ns, timestamp)
+        checkpoint_data = MongoSolr::CheckpointData.new(timestamp,
+                                                        { @test_coll1_ns => timestamp })
 
         @solr.stubs(:add)
         @solr.stubs(:commit)
@@ -491,9 +489,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         @test_coll1.insert({ :z => 3 })
         @test_coll1.db.get_last_error
         timestamp2 = @solr_sync.send :get_last_oplog_timestamp
-
-        checkpoint_data = MongoSolr::CheckpointData.new(timestamp2)
-        checkpoint_data.set(@test_coll1_ns, timestamp1)
+        checkpoint_data = MongoSolr::CheckpointData.new(timestamp2,
+                                                        { @test_coll1_ns => timestamp1 })
 
         @solr.expects(:add).once
         @solr.expects(:commit).at_least_once
@@ -515,8 +512,7 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         # hack for getting the last oplog timestamp
         timestamp = @solr_sync.send :get_last_oplog_timestamp
 
-        checkpoint_data = MongoSolr::CheckpointData.new(timestamp)
-        checkpoint_data.set(@test_coll1_ns, nil)
+        checkpoint_data = MongoSolr::CheckpointData.new(timestamp, { @test_coll1_ns => nil })
 
         @solr.expects(:add).times(3)
         @solr.expects(:commit).at_least_once
@@ -537,9 +533,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         @test_coll1.insert({ :z => 3 })
         @test_coll1.db.get_last_error
         timestamp2 = @solr_sync.send :get_last_oplog_timestamp
-
-        checkpoint_data = MongoSolr::CheckpointData.new(timestamp2)
-        checkpoint_data.set(@test_coll1_ns, timestamp1)
+        checkpoint_data = MongoSolr::CheckpointData.new(timestamp2,
+                                                        { @test_coll1_ns => timestamp1 })
 
         @solr.stubs(:add)
         @solr.stubs(:commit)
@@ -570,8 +565,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
             timestamp = @solr_sync.send :get_last_oplog_timestamp
 
             @test_coll1.insert({ :y => "why?" })
-            checkpoint_data = MongoSolr::CheckpointData.new(timestamp)
-            checkpoint_data.set(@test_coll1_ns, timestamp)
+            checkpoint_data = MongoSolr::CheckpointData.new(timestamp,
+                                                            { @test_coll1_ns => timestamp })
 
             @solr.expects(:add).once
             @solr.expects(:commit).at_least_once
@@ -631,8 +626,8 @@ class SolrSynchronizerTest < Test::Unit::TestCase
 
             # hack for getting the last oplog timestamp
             timestamp = @solr_sync.send :get_last_oplog_timestamp
-            checkpoint_data = MongoSolr::CheckpointData.new(timestamp)
-            checkpoint_data.set(@test_coll1_ns, timestamp)
+            checkpoint_data = MongoSolr::CheckpointData.new(timestamp,
+                                                            { @test_coll1_ns => timestamp })
 
             @solr_sync.update_config({ :ns_set => {}, :wait => true } )
             @test_coll1.insert({ :y => 1 })
