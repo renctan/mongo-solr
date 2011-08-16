@@ -211,6 +211,7 @@ module MongoSolr
       config_poll_interval = opt[:config_poll_interval] || 1
       err_retry_interval = opt[:err_retry_interval] || 10
       logger = opt[:logger] || Logger.new(STDOUT)
+      opt[:is_sharded] = true
       shard_set = {}
 
       shard_coll = mongo["config"]["shards"]

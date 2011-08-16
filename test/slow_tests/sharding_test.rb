@@ -1,28 +1,22 @@
 require File.expand_path("../../test_helper", __FILE__)
 
-require "mongo"
 require "rsolr"
 require_relative("../shard_manager")
 require_relative("../js_plugin_wrapper")
+require "#{PROJ_SRC_PATH}/solr_synchronizer"
+require "#{PROJ_SRC_PATH}/util"
 
 class ShardingTest < Test::Unit::TestCase
   include TestHelper
+  include MongoSolr
+  include MongoSolr::Util
 
   DB_NAME = "test"
   COLL_NAME = "user"
   NS = DB_NAME + "." + COLL_NAME
   SHARD_KEY = "id"
   TIMEOUT = 10
-
-  def self.startup
-    @@cluster = ShardManager.instance
-    ShardingTest.setup_shard(@@cluster)
-    ShardingTest.presplit(@@cluster, 50)
-  end
-
-  def self.shutdown
-    @@cluster.cleanup
-  end
+  DEFAULT_LOGGER = Logger.new("/dev/null")
 
   def self.setup_shard(shard)
     shard.start
@@ -58,7 +52,10 @@ class ShardingTest < Test::Unit::TestCase
 
   context "basic" do
     setup do
-      @mongos = @@cluster.connection
+      @cluster = ShardManager.instance
+      ShardingTest.setup_shard(@cluster)
+
+      @mongos = @cluster.connection
       @coll = @mongos[DB_NAME][COLL_NAME]
       @coll.remove
 
@@ -73,17 +70,21 @@ JAVASCRIPT
       @js.eval(js_code)
 
       @solr = RSolr.connect
-      @mock = mock()
-      @mock.expects(:daemon_end).once
     end
 
     teardown do
       @js.eval("MSolr.reset();")
       @solr.delete_by_query("*:*")
       @solr.commit
+
+      @cluster.cleanup
     end
 
     should "update Solr with updates to 2 different chunks" do
+      ShardingTest.presplit(@cluster, 50)
+      mock = mock()
+      mock.expects(:daemon_end).once
+
       run_daemon("-p #{ShardManager::MONGOS_PORT}") do
         @coll.insert({ SHARD_KEY => 7 })
         @coll.insert({ SHARD_KEY => 77 })
@@ -95,7 +96,88 @@ JAVASCRIPT
         end
 
         assert(result, "Failed to index to Solr within #{TIMEOUT} seconds")
-        @mock.daemon_end
+        mock.daemon_end
+      end
+    end
+
+    should "update Solr when deletion occured" do
+      ShardingTest.presplit(@cluster, 50)
+      doc = { SHARD_KEY => "for_deletion" }
+      doc_id = @coll.insert(doc)
+      mock = mock()
+      mock.expects(:daemon_end).once
+
+      run_daemon("-p #{ShardManager::MONGOS_PORT}") do
+        @coll.remove(doc)
+
+        solr_doc = nil
+        result = retry_until_true(TIMEOUT) do
+          response = @solr.select({ :params => { :q => "_id:#{doc_id}" }})
+          solr_doc = response["response"]["docs"].first
+          not solr_doc.nil?
+        end
+
+        assert(result, "Failed to index to Solr within #{TIMEOUT} seconds")
+        assert(solr_doc[SolrSynchronizer::SOLR_DELETED_FIELD],
+               "Document is not marked for deletion: #{solr_doc.inspect}")
+        mock.daemon_end
+      end
+    end
+
+    context "chunk migration" do
+      setup do
+        @config_writer = mock()
+        @config_writer.stubs(:update_timestamp)
+        @config_writer.stubs(:update_commit_timestamp)
+        @config_writer.stubs(:update_total_dump_count)
+        @config_writer.stubs(:reset_dump_count)
+        @config_writer.stubs(:increment_dump_count)
+
+        @mock_solr = mock()
+
+        @sync_opts = {
+          :ns_set => { NS => {} },
+          :logger => DEFAULT_LOGGER,
+          :is_sharded => true
+        }
+
+        100.times { |x| @coll.insert({ SHARD_KEY => x }) }
+        @mock_solr.stubs(:add)
+        @mock_solr.stubs(:commit)
+      end
+
+      should "not delete docs at FROM shard" do
+        mongo = Mongo::Connection.new("localhost", ShardManager::SHARD1_PORT)
+        oplog_coll = get_oplog_collection(mongo, :auto)
+
+        solr_sync = SolrSynchronizer.
+          new(@mock_solr, @mongos, oplog_coll, @config_writer, @sync_opts)
+
+        solr_sync.sync do |mode, doc_count|
+          if mode == :finished_dumping then
+            ShardingTest.presplit(@cluster, 50)
+            @mock_solr.expects(:add).never
+          else
+            break
+          end
+        end
+      end
+
+      should "not insert docs at TO shard" do
+        mongo = Mongo::Connection.new("localhost", ShardManager::SHARD2_PORT)
+        oplog_coll = get_oplog_collection(mongo, :auto)
+
+        solr_sync = SolrSynchronizer.
+          new(@mock_solr, @mongos, oplog_coll, @config_writer, @sync_opts)
+
+        solr_sync.sync do |mode, doc_count|
+          if mode == :finished_dumping then
+            ShardingTest.presplit(@cluster, 50)
+            @mock_solr.expects(:add).never
+          else
+            break
+          end
+        end
       end
     end
   end

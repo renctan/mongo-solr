@@ -41,6 +41,7 @@ module MongoSolr
     #   oplog cursor gets too stale, otherwise, throws an exception.
     # @opt [CheckpointData] :checkpt (nil) This will be used to continue from a previous
     #   session if given.
+    # @opt [Boolean] :is_sharded (false) Set to true if connected to a sharded server.
     #
     # Note: This object assumes that the solr and mongo_connection params are valid. As a
     #   a consequence, it will keep on retrying whenever an exception on these objects
@@ -57,6 +58,8 @@ module MongoSolr
       @update_interval = opt[:interval] || 0
       @err_retry_interval = opt[:err_retry_interval] || 1
       @auto_dump = opt[:auto_dump] || false
+      @is_sharded = opt[:is_sharded] || false
+
       @oplog_coll = oplog_coll
       @config_writer = config_writer
 
@@ -315,6 +318,16 @@ module MongoSolr
 
         case oplog_entry["op"]
         when "i" then
+          if @is_sharded then
+            id = oplog_entry["o"]["_id"]
+            db_name, coll_name = get_db_and_coll_from_ns(namespace)
+
+            # Check if document exists in the mongos. If it does, it implies that this delete
+            # operation is part of a chunk migration.
+            count = @db_connection[db_name][coll_name].find({ "_id" => id }).count
+            next if count >= 1
+          end
+
           @logger.info "#{@name}: adding #{doc.inspect}"
           @solr.add(prepare_solr_doc(doc, namespace, timestamp))
           retry_until_ok { @config_writer.update_timestamp(namespace, timestamp) }
@@ -333,6 +346,16 @@ module MongoSolr
           # point of view) after deletion.
           to_update = update_list[namespace] ||= Set.new
           id = oplog_entry["o"]["_id"]
+
+          if @is_sharded then
+            db_name, coll_name = get_db_and_coll_from_ns(namespace)
+
+            # Check if document exists in the mongos. If it does, it implies that this delete
+            # operation is part of a chunk migration.
+            count = @db_connection[db_name][coll_name].find({ "_id" => id }).count
+            next if count >= 1
+          end
+
           to_update.delete(id)
 
           @logger.info "#{@name}: marked as deleted: #{doc.inspect}"
