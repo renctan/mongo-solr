@@ -91,11 +91,11 @@ module MongoSolr
     # @param oplog_coll [Mongo::Collection] The oplog collection to monitor.
     # @param config_source [MongoSolr::ConfigSource] The object that contains the
     #   configuration information for all the different Solr Servers.
-    # @param config_reader_factory [MongoSolr::Factory] A factory for creating
+    # @param config_reader_builder [MongoSolr::ObjectBuilder] A builder for creating
     #   MongoSolr::ConfigFormatReader instances. The create method should be able to accept
     #   one parameter argument that contains the raw configuration data.
     #   @see MongoSolr::ConfigFormatReader
-    # @param config_writer_factory [MongoSolr::Factory] A factory for creating
+    # @param config_writer_builder [MongoSolr::ObjectBuilder] A builder for creating
     #   MongoSolr::ConfigWriter instances. The create method should be able to accept a single
     #   String argument that refers to the location of the Solr Server.
     # @option opt [Logger] :logger The object to use for logging. The default logger outputs
@@ -106,8 +106,8 @@ module MongoSolr
     #    after encountering an error in the Solr server or MongoDB instance.
     #
     # @see MongoSolr::SolrSynchronizer#new for more recognized values for the opt parameter.
-    def run(mongo, oplog_coll, config_source, config_reader_factory,
-            config_writer_factory, opt = {})
+    def run(mongo, oplog_coll, config_source, config_reader_builder,
+            config_writer_builder, opt = {})
       @stop_mutex.synchronize { @stop = false }
 
       config_poll_interval = opt[:config_poll_interval] || 1
@@ -120,7 +120,7 @@ module MongoSolr
 
         begin
           config_source.each do |config_data|
-            solr_config = config_reader_factory.create(config_data)
+            solr_config = config_reader_builder.create(config_data)
 
             url = solr_config.solr_loc
             new_ns_set = solr_config.get_ns_set
@@ -133,7 +133,7 @@ module MongoSolr
               solr_sync_set.delete url
             elsif url_ok?(url, logger) then
               solr = RSolr.connect(:url => url)
-              config_writer = config_writer_factory.create(url)
+              config_writer = config_writer_builder.create(url)
 
               name = opt[:name] || ""
               extra_opt = {
@@ -193,19 +193,19 @@ module MongoSolr
     # @param oplog_coll [Mongo::Collection] The oplog collection to monitor.
     # @param config_source [MongoSolr::ConfigSource] The object that contains the
     #   configuration information for all the different Solr Servers.
-    # @param config_reader_factory [MongoSolr::Factory] A factory for creating
+    # @param config_reader_builder [MongoSolr::ObjectBuilder] A builder for creating
     #   MongoSolr::ConfigFormatReader instances. The create method should be able to accept
     #   one parameter argument that contains the raw configuration data.
     #   @see MongoSolr::ConfigFormatReader
-    # @param config_writer_factory [MongoSolr::Factory] A factory for creating
+    # @param config_writer_builder [MongoSolr::ObjectBuilder] A builder for creating
     #   MongoSolr::ConfigWriter instances. The create method should be able to accept a single
     #   String argument that refers to the location of the Solr Server.
     # @option opt [Logger] :logger The object to use for logging. The default logger outputs
     #   to STDOUT.
     #
     # @see MongoSolr::Daemon#run for more recognized values for the opt parameter.
-    def run_w_shard(mongo, config_source, config_reader_factory,
-                    config_writer_factory, opt = {})
+    def run_w_shard(mongo, config_source, config_reader_builder,
+                    config_writer_builder, opt = {})
       @stop_mutex.synchronize { @stop = false }
 
       config_poll_interval = opt[:config_poll_interval] || 1
@@ -253,8 +253,8 @@ module MongoSolr
 
               shard = DaemonThread.new(Daemon.new(), host, logger)
               shard.start(mongo, oplog_coll, config_source,
-                          Factory.new(config_reader_factory, shard_id),
-                          Factory.new(config_writer_factory, shard_id),
+                          ObjectBuilder.new(config_reader_builder, shard_id),
+                          ObjectBuilder.new(config_writer_builder, shard_id),
                           opt.merge(extra_opt))
             end
 

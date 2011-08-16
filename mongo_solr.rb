@@ -24,7 +24,7 @@ require_relative "src/config_writer"
 require_relative "src/shard_config_writer"
 require_relative "src/config_format_reader"
 require_relative "src/solr_config_const"
-require_relative "src/factory"
+require_relative "src/object_builder"
 require_relative "src/cleanup"
 
 # Checks whether a connection is connected to a mongos process
@@ -77,8 +77,8 @@ if $0 == __FILE__ then
 
     daemon_thread = Thread.start do
       daemon.run_w_shard(mongo, config_source,
-                         Factory.new(ShardConfigFormatReader),
-                         Factory.new(ShardConfigWriter, config_coll),
+                         ObjectBuilder.new(ShardConfigFormatReader),
+                         ObjectBuilder.new(ShardConfigWriter, config_coll),
                          daemon_opt)
     end
   else
@@ -90,8 +90,8 @@ if $0 == __FILE__ then
     end
 
     daemon_thread = Thread.start do
-      daemon.run(mongo, oplog_coll, config_source, Factory.new(ConfigFormatReader),
-                 Factory.new(ConfigWriter, config_coll), daemon_opt)
+      daemon.run(mongo, oplog_coll, config_source, ObjectBuilder.new(ConfigFormatReader),
+                 ObjectBuilder.new(ConfigWriter, config_coll), daemon_opt)
     end
   end
 

@@ -1,19 +1,19 @@
-# A simple class for instantiating a factory object that can create an instance of
+# A simple class for instantiating a builder object that can create an instance of
 # a given type and partially apply arguments.
 module MongoSolr
-  class Factory
+  class ObjectBuilder
     attr_reader :klass
     alias_method :type, :klass
 
     attr_reader :partial_args
 
-    # @param klass [Class, MongoSolr::Factory] A class object that can be instantiated. If
-    #   an instance of MongoSolr::Factory is given the new args will be concatenated to the
-    #   partial arguments of the given factory object.
+    # @param klass [Class, MongoSolr::ObjectBuilder] A class object that can be instantiated. If
+    #   an instance of MongoSolr::ObjectBuilder is given the new args will be concatenated to the
+    #   partial arguments of the given builder object.
     # @param args [Splat] Set of arguments that will be partially applied to the constructor
     #   of klass.
     def initialize(klass, *args)
-      if klass.is_a? MongoSolr::Factory then
+      if klass.is_a? MongoSolr::ObjectBuilder then
         @partial_args = klass.partial_args + args
         @klass = klass.type
       else
