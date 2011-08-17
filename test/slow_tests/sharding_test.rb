@@ -126,13 +126,7 @@ JAVASCRIPT
 
     context "SolrSynchronizer" do
       setup do
-        @config_writer = mock()
-        @config_writer.stubs(:update_timestamp)
-        @config_writer.stubs(:update_commit_timestamp)
-        @config_writer.stubs(:update_total_dump_count)
-        @config_writer.stubs(:reset_dump_count)
-        @config_writer.stubs(:increment_dump_count)
-
+        @config_writer = stub_everything("config_writer")
         @mock_solr = mock()
 
         @sync_opts = {

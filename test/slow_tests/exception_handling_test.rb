@@ -39,10 +39,7 @@ class ExceptionHandlingTest < Test::Unit::TestCase
         @test_coll1_ns => {}
       }
 
-      config_writer = mock()
-      config_writer.stubs(:update_timestamp)
-      config_writer.stubs(:update_commit_timestamp)
-
+      config_writer = stub_everything("config_writer")
       oplog_coll = get_oplog_collection(@connection, :master_slave)
 
       @solr_sync = MongoSolr::SolrSynchronizer.
