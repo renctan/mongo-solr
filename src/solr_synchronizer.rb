@@ -108,7 +108,7 @@ module MongoSolr
     # @param block [Proc] @see #dump_and_sync
     def update_config(opt = {}, &block)
       # Lock usage:
-      # 1. @is_synching->add_collection_wo_lock()
+      # 1. @synching_mutex->add_namespace()
 
       wait = opt[:wait] || false
       checkpoint_opt = opt[:checkpt]
@@ -262,7 +262,14 @@ module MongoSolr
       db_name, coll = get_db_and_coll_from_ns(namespace)
 
       retry_until_ok do
-        cursor = @db_connection[db_name][coll].find()
+        if @is_sharded then
+          # Use the connection from oplog (which is to the shard itself) since 
+          # @db_connection is to the mongos, which will return results from all shards!
+          cursor = @oplog_coll.db.connection[db_name][coll].find()
+        else
+          cursor = @db_connection[db_name][coll].find()
+        end
+
         @config_writer.update_total_dump_count(namespace, cursor.count)
         @config_writer.reset_dump_count(namespace)
 

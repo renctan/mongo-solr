@@ -124,7 +124,7 @@ JAVASCRIPT
       end
     end
 
-    context "chunk migration" do
+    context "SolrSynchronizer" do
       setup do
         @config_writer = mock()
         @config_writer.stubs(:update_timestamp)
@@ -146,36 +146,65 @@ JAVASCRIPT
         @mock_solr.stubs(:commit)
       end
 
-      should "not delete docs at FROM shard" do
+      should "only dump contents from own shard" do
+        ShardingTest.presplit(@cluster, 50)
+
         mongo = Mongo::Connection.new("localhost", ShardManager::SHARD1_PORT)
         oplog_coll = get_oplog_collection(mongo, :auto)
 
         solr_sync = SolrSynchronizer.
           new(@mock_solr, @mongos, oplog_coll, @config_writer, @sync_opts)
 
-        solr_sync.sync do |mode, doc_count|
-          if mode == :finished_dumping then
-            ShardingTest.presplit(@cluster, 50)
-            @mock_solr.expects(:add).never
-          else
-            break
-          end
+        # Make sure that migration has completed by inserting a doc (Since the migration
+        # process holds a write lock, being able to write to the collection implies that
+        # the migration is complete)
+        coll = mongo[DB_NAME][COLL_NAME]
+        coll.insert({ SHARD_KEY => 11, "bboy" => "bgirl" })
+        coll.db.get_last_error
+
+        cursor = coll.find
+        doc_count = cursor.count
+        shard_key_values = Set.new(cursor.to_a.map { |x| x[SHARD_KEY] })
+
+        @mock_solr.expects(:add).times(doc_count).with do |arg|
+          shard_key_values.include?(arg[SHARD_KEY])
         end
+
+        solr_sync.sync { |mode, count| break }
       end
 
-      should "not insert docs at TO shard" do
-        mongo = Mongo::Connection.new("localhost", ShardManager::SHARD2_PORT)
-        oplog_coll = get_oplog_collection(mongo, :auto)
+      context "chunk migration" do
+        should "not delete docs at FROM shard" do
+          mongo = Mongo::Connection.new("localhost", ShardManager::SHARD1_PORT)
+          oplog_coll = get_oplog_collection(mongo, :auto)
 
-        solr_sync = SolrSynchronizer.
-          new(@mock_solr, @mongos, oplog_coll, @config_writer, @sync_opts)
+          solr_sync = SolrSynchronizer.
+            new(@mock_solr, @mongos, oplog_coll, @config_writer, @sync_opts)
 
-        solr_sync.sync do |mode, doc_count|
-          if mode == :finished_dumping then
-            ShardingTest.presplit(@cluster, 50)
-            @mock_solr.expects(:add).never
-          else
-            break
+          solr_sync.sync do |mode, doc_count|
+            if mode == :finished_dumping then
+              ShardingTest.presplit(@cluster, 50)
+              @mock_solr.expects(:add).never
+            else
+              break
+            end
+          end
+        end
+
+        should "not insert docs at TO shard" do
+          mongo = Mongo::Connection.new("localhost", ShardManager::SHARD2_PORT)
+          oplog_coll = get_oplog_collection(mongo, :auto)
+
+          solr_sync = SolrSynchronizer.
+            new(@mock_solr, @mongos, oplog_coll, @config_writer, @sync_opts)
+
+          solr_sync.sync do |mode, doc_count|
+            if mode == :finished_dumping then
+              ShardingTest.presplit(@cluster, 50)
+              @mock_solr.expects(:add).never
+            else
+              break
+            end
           end
         end
       end
