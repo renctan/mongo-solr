@@ -138,14 +138,16 @@ MSolr.prototype.server = function ( location ) {
  * @param {String} db The name of the database to index.
  * @param {String} [coll = null] The name of the collection to index. All collections under
  *   db will be indexed if this is not specified.
- * @param {String} [field = null] The name of the field to index (not yet supported)
+ * @param fields {Object} The names of the fields of this object are the only fields that
+ *   will be included when indexing a document. The values of this object are currently
+ *   ignored. All of the fields are indexed if this object is empty or null.
  */
-MSolr.prototype.index = function ( server, db, coll, field ) {
+MSolr.prototype.index = function ( server, db, coll, fields ) {
   if ( coll == null ) {
     this.server( server ).index( db );
   }
   else {
-    this.server( server ).index( db + "." + coll, field );
+    this.server( server ).index( db + "." + coll, fields );
   }
 };
 

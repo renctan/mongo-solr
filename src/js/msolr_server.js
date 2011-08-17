@@ -25,11 +25,17 @@ var MSolrServer = function ( configColl, loc, opt ) {
  * Sets the target for indexing.
  * 
  * @param name {String} Name of the database or namespace to index to Solr.
- * @param fields Not yet supported
+ * @param fields {Object} The names of the fields of this object are the only fields that
+ *   will be included when indexing a document. The values of this object are currently
+ *   ignored. All of the fields are indexed if this object is empty or null.
  *
  * Ex:
  * server.index( "test" ); // Sets all collections under the test DB for indexing.
- * server.index( "test.user"); // Sets the user collection for indexing.
+ * server.index( "test.user" ); // Sets the user collection for indexing.
+ * 
+ * // Sets the user collection for indexing and only include the name and history fields
+ * // of the document.
+ * server.index( "test.user", {name: 1, history: 1} );
  */
 MSolrServer.prototype.index = function ( name, fields ) {
   if ( name.indexOf(".") == -1 ) {
@@ -44,18 +50,17 @@ MSolrServer.prototype.index = function ( name, fields ) {
  * Removes the target from indexing.
  * 
  * @param name {String} Name of the database or namespace to index to Solr.
- * @param fields Not yet supported
  * 
  * Ex:
  * server.remove( "test" ); // Removes all collections under the test DB from indexing.
  * server.remove( "test.user"); // Removes the user collection from indexing.
  */
-MSolrServer.prototype.remove = function ( name, fields ) {
+MSolrServer.prototype.remove = function ( name ) {
   if ( name.indexOf(".") == -1 ) {
     this._removeByDB( name );
   }
   else {
-    this._removeByNS( name, fields );
+    this._removeByNS( name );
   }
 };
 
@@ -83,11 +88,9 @@ MSolrServer.prototype._indexByDB = function ( dbName ){
  * Removes a database from indexing.
  * 
  * @param {String} dbName The name of the database.
- * @param {Boolean} [wait = false] Wait till the operation completes before returning.
  */
-MSolrServer.prototype._removeByDB = function ( dbName, wait ) {
+MSolrServer.prototype._removeByDB = function ( dbName ) {
   var criteria = {};
-  var doWait = wait || false;
   var dbRegexPattern = new RegExp( "^" + dbName + "\\..+" );
 
   criteria[MSolrConst.SOLR_URL_KEY] = this.loc;
@@ -112,8 +115,7 @@ MSolrServer.prototype._indexByNS = function ( ns, field ){
   criteria[MSolrConst.NS_KEY] = ns;
 
   if ( field != null ) {
-    fieldDoc[field] = MSolrDb.INDEX_COLL_FIELD_OPT;
-    updateDoc[MSolrConst.COLL_FIELD_KEY] = fieldDoc;
+    updateDoc[MSolrConst.COLL_FIELD_KEY] = field;
   }
 
   this.configColl.update( criteria, { $set: updateDoc }, true );
@@ -125,7 +127,7 @@ MSolrServer.prototype._indexByNS = function ( ns, field ){
  * 
  * @param {String} ns The namespace of the collection to remove.
  */
-MSolrServer.prototype._removeByNS = function ( ns, wait ){
+MSolrServer.prototype._removeByNS = function ( ns ){
   var criteria = {};
 
   criteria[MSolrConst.SOLR_URL_KEY] = this.loc;

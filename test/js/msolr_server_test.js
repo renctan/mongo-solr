@@ -177,11 +177,13 @@ MSolrServerTest.prototype.indexUsingDbNameShouldProperlySetDottedCollectionNames
 
 MSolrServerTest.prototype.indexShouldAddOneCollectionTest = function () {
   var ns = TEST_DB_1.name + ".qwerty";
+  var fields = {name: 1, address: 0};
 
-  this.solr.index( ns, null );
+  this.solr.index( ns, fields );
   this.configColl.find( this.serverConfigCriteria ).forEach( function ( doc ) {
     // Expecting only a single result
     assert.eq( ns, doc[MSolrConst.NS_KEY] );
+    assert.eq( fields, doc[MSolrConst.COLL_FIELD_KEY] );
   });
 };
 

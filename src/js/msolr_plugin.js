@@ -72,11 +72,13 @@ DB.prototype.getSolrIndexes = function ( ) {
 /**
  * Sets this collection for indexing to Solr.
  * 
- * @params {Array<String>} fields not yet supported
+ * @param fields {Object} The names of the fields of this object are the only fields that
+ *   will be included when indexing a document. The values of this object are currently
+ *   ignored. All of the fields are indexed if this object is empty or null.
  */
 DBCollection.prototype.solrIndex = function ( fields ) {
   MSolr._checkConnection();
-  MSolr.DEFAULT.index( MSolr.SERVER, this.getFullName(), fields );
+  MSolr.DEFAULT.index( MSolr.SERVER, this.getDB().getName(), this.getName(), fields );
 };
 
 /**
@@ -97,9 +99,9 @@ DBCollection.prototype.getSolrIndexes = function ( ) {
 /**
  * Removes this collection from being indexed.
  */
-DBCollection.prototype.dropSolrIndex = function ( fields ) {
+DBCollection.prototype.dropSolrIndex = function ( ) {
   MSolr._checkConnection();
-  MSolr.DEFAULT.server( MSolr.SERVER ).remove( this.getFullName(), fields );
+  MSolr.DEFAULT.server( MSolr.SERVER ).remove( this.getFullName() );
 };
 
 /**

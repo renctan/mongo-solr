@@ -641,6 +641,95 @@ class SolrSynchronizerTest < Test::Unit::TestCase
         update_thread.join
       end
     end
+
+    context "filtering" do
+      setup do
+        @solr_sync.update_config({ :ns_set =>
+                                   { @test_coll1_ns => Set.new(%w[name email]) }})
+
+        @solr.stubs(:commit)
+      end
+
+      should "not filter any fields if filter fields is empty" do
+        @solr_sync.update_config({ :ns_set => { @test_coll1_ns => {} }})
+
+        doc = {
+          "name" => "Mongo",
+          "address" => "NYC",
+          "email" => "mongo@10gen.com"
+        }
+
+        doc_id = @test_coll1.insert(doc)
+        @solr.expects(:add).once.with do |arg|
+          arg["name"] == doc["name"] and arg["email"] == doc["email"] and
+            arg["address"] == doc["address"] and arg["_id"] == doc_id
+        end
+
+        @solr_sync.sync { |mode, count| break }
+      end
+
+      should "filter out fields not included in ns_set during dump" do
+        doc = {
+          "name" => "Mongo",
+          "address" => "NYC",
+          "email" => "mongo@10gen.com"
+        }
+
+        doc_id = @test_coll1.insert(doc)
+        @solr.expects(:add).once.with do |arg|
+          arg["name"] == doc["name"] and arg["email"] == doc["email"] and
+            !arg.has_key?("address") and arg["_id"] == doc_id
+        end
+
+        @solr_sync.sync { |mode, count| break }
+      end
+
+      should "filter out fields not included in ns_set during sync" do
+        @solr_sync.update_config({ :ns_set =>
+                                   { @test_coll1_ns => Set.new(%w[name email]) }})
+
+        doc = {
+          "name" => "Mongo",
+          "address" => "NYC",
+          "email" => "mongo@10gen.com"
+        }
+
+        @solr.stubs(:add)
+
+        @solr_sync.sync do |mode, count|
+          if mode == :finished_dumping then
+            doc_id = @test_coll1.insert(doc)
+            @solr.expects(:add).once.with do |arg|
+              arg["name"] == doc["name"] and arg["email"] == doc["email"] and
+                !arg.has_key?("address") and arg["_id"] == doc_id
+            end
+          else
+            break
+          end
+        end
+      end
+
+      should "have no problem filtering docs without the field given in ns_set during sync" do
+        doc = {
+          "name" => "Mongo",
+          "address" => "NYC",
+        }
+
+        @solr.stubs(:add)
+
+        @solr_sync.sync do |mode, count|
+          if mode == :finished_dumping then
+            doc_id = @test_coll1.insert(doc)
+            @solr.expects(:add).once.with do |arg|
+              arg["name"] == doc["name"] and !arg.has_key?("email") and
+                !arg.has_key?("address") and arg["_id"] == doc_id
+            end
+          else
+            break
+          end
+        end
+      end
+    end
   end
 end
 

@@ -23,6 +23,11 @@ class ShardConfigFormatReaderTest < Test::Unit::TestCase
       @config_data.each do |doc|
         ns = doc[SolrConfigConst::NS_KEY]
         assert(ns_set.include?(ns), "#{ns} not included in #{ns_set.inspect}")
+
+        fields = ns_set[ns]
+        doc[SolrConfigConst::COLL_FIELD_KEY].keys.each do |field|
+          assert(fields.include?(field), "#{field} not included in #{fields.inspect} on #{ns}")
+        end
       end
     end
 

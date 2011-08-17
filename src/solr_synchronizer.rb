@@ -766,7 +766,7 @@ module MongoSolr
     #
     # @return [Object] the pre-formatted document to send to Solr.
     def prepare_solr_doc(doc, ns, ts)
-      ret_doc = filter_doc(DocumentTransform.translate_doc(doc), ns).merge({
+      ret_doc = DocumentTransform.translate_doc(filter_doc(doc, ns)).merge({
         SOLR_TS_FIELD => bsonts_to_long(ts),
         SOLR_NS_FIELD => ns
       })
@@ -781,7 +781,14 @@ module MongoSolr
     #
     # @return [Object] the filtered document
     def filter_doc(doc, ns)
-      # TODO: implement
+      fields = @ns_set[ns]
+
+      unless fields.nil? or fields.empty? then
+        new_doc = doc.reject { |k, v| !(fields.include?(k)) }
+        new_doc["_id"] = doc["_id"]
+        doc = new_doc
+      end
+
       return doc
     end
 

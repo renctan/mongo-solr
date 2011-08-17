@@ -29,10 +29,16 @@ module MongoSolr
 
       @config_data.each do |ns_entry|
         namespace = ns_entry[SolrConfigConst::NS_KEY]
-        fields = []
+        field_value = ns_entry[SolrConfigConst::COLL_FIELD_KEY]
+
+        if field_value.nil? then
+          fields = nil
+        else
+          fields = field_value.keys
+        end
 
         if ns_set.has_key? namespace then
-          ns_set[namespace] << fields
+          ns_set[namespace] << fields unless fields.nil?
         else
           ns_set[namespace] = Set.new(fields)
         end
