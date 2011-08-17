@@ -102,10 +102,11 @@ module MongoSolr
     # Attempts to upgrade a normal connection to a replica set connection.
     #
     # @param mongo [Mongo::Connection] The MongoDB connection to upgrade.
+    # @option opts @see ReplSetConnection#new
     #
     # @return [Mongo::Connection, Mongo::ReplSetConnection] the a replica set connection
     #   if the given host is a replica set member or a normal connection otherwise.
-    def upgrade_to_replset(mongo)
+    def upgrade_to_replset(mongo, opts = {})
       begin
         stat = mongo["admin"].command({ :replSetGetStatus => 1 })
         member_list = stat["members"].map do |member|
@@ -116,7 +117,7 @@ module MongoSolr
         args = member_list
         args << { :rs_name => stat["set"] }
 
-        mongo = Mongo::ReplSetConnection.new(*args)
+        mongo = Mongo::ReplSetConnection.new(*args, opts)
       rescue Mongo::OperationFailure => e
         raise unless e.message =~ /--replSet/i
       end

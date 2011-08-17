@@ -589,7 +589,7 @@ module MongoSolr
             # Do nothing
           end
         end
-        
+
         consume_backlog(oplog_ns)
         yield :depleted_backlog if block_given?
       end

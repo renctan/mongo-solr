@@ -18,9 +18,10 @@ module MongoSolr
       options.interval = 1
       options.config_interval = 1
       options.err_interval = 10
-      options.cleanup_interval = 3600
-      options.cleanup_old_age = 172800
+      options.cleanup_interval = 3600 # 1 hour
+      options.cleanup_old_age = 172800 # 2 days
       options.auto_dump = false
+      options.conn_pool_size = 5
       options.auth = {}
 
       opt_parser = OptionParser.new do |opts|
@@ -94,6 +95,15 @@ module MongoSolr
             options.cleanup_interval = list.first.to_i
             options.cleanup_old_age = list[1].to_i
           end
+        end
+
+        opts.separator ""
+        opts.on("--conn_pool_size NUMBER", Integer,
+                "The size of the MongoDB connection pool.",
+                "Increase the value when you expect to",
+                "connect to a huge sharded cluster or",
+                "several Solr servers. Defaults to #{options.conn_pool_size}.") do |val|
+          options.conn_pool_size = val
         end
 
 #        opts.separator ""

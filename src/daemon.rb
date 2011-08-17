@@ -214,6 +214,11 @@ module MongoSolr
       opt[:is_sharded] = true
       shard_set = {}
 
+      connection_opt = {
+        :pool_size => opt[:pool_size],
+        :pool_timeout => opt[:pool_timeout]
+      }
+
       shard_coll = mongo["config"]["shards"]
 
       loop do
@@ -238,8 +243,8 @@ module MongoSolr
               end
 
               location, port = address.split(":")
-              shard_conn = Mongo::Connection.new(location, port)
-              shard_conn = upgrade_to_replset(shard_conn)
+              shard_conn = Mongo::Connection.new(location, port, connection_opt)
+              shard_conn = upgrade_to_replset(shard_conn, connection_opt)
 
               if shard_conn.is_a? Mongo::ReplSetConnection then
                 oplog_coll = get_oplog_collection(shard_conn, :repl_set)
@@ -283,6 +288,8 @@ module MongoSolr
             return
           end
         end
+
+        sleep config_poll_interval
       end
     end
   end

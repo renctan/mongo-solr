@@ -45,13 +45,17 @@ if $0 == __FILE__ then
 
   mongo_loc = options.mongo_loc
   connected_to_mongos = false
+  connection_opts = {
+    :pool_size => options.conn_pool_size,
+    :pool_timeout => 5
+  }
 
   if (mongo_loc =~ /^mongodb:\/\//) then
-    mongo = Mongo::Connection.from_uri(mongo_loc)
+    mongo = Mongo::Connection.from_uri(mongo_loc, connection_opts)
   else
-    mongo = Mongo::Connection.new(mongo_loc, options.mongo_port)
+    mongo = Mongo::Connection.new(mongo_loc, options.mongo_port, connection_opts)
     connected_to_mongos = is_mongos?(mongo)
-    mongo = upgrade_to_replset mongo unless connected_to_mongos
+    mongo = upgrade_to_replset(mongo, connection_opts) unless connected_to_mongos
   end
 
   authenticate_to_db(mongo, options.auth)
