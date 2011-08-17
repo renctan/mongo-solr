@@ -200,11 +200,59 @@ module MongoSolr
       return oplog_coll
     end
 
+    # Compare between two objects using the rules specified for BSON objects:
+    # http://www.mongodb.org/display/DOCS/What+is+the+Compare+Order+for+BSON+Types
+    #
+    # @param lhs [Object]
+    # @param rhs [Object]
+    #
+    # @return [Integer] 1 if rhs > lhs, 0 if lhs == rhs and -1 otherwise.
+    def bson_comp(lhs, rhs)
+      lhs_rank = bson_type_rank lhs
+      rhs_rank = bson_type_rank rhs
+
+      comp = lhs_rank <=> rhs_rank
+
+      if comp.zero? then
+        if lhs == rhs then
+          comp = 0
+        elsif lhs < rhs then
+          comp = -1
+        else
+          comp = 1
+        end
+      end
+
+      return comp
+    end
+
     private
     OPLOG_NOT_FOUND_MSG = "Cannot find oplog collection. Make sure that " +
       "you are connected to a server running on master/slave or replica set configuration."
     OPLOG_AMBIGUOUS_MSG = "Cannot determine which oplog to use. Please specify " +
       "the appropriate mode."
+
+    # Get the rank of an object type in reference to the BSON comparison order.
+    #
+    # @param obj [Object] The object to rank.
+    #
+    # @return [Integer] an equivalent integer value for the relative rank of the object type.
+    def bson_type_rank(obj)
+      case obj
+      when BSON::MinKey then -1000
+      when obj.nil? then 0
+      when Numeric then 1
+      when Symbol, String then 2
+      when Array then 4
+      when BSON::Binary then 5
+      when BSON::ObjectId then 6
+      when Boolean then 7
+      when Time, BSON::Timestamp then 8
+      when Regexp then 9
+      when BSON::MaxKey then 1000
+      else 3 # Object
+      end
+    end
   end
 end
 
