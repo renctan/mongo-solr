@@ -314,10 +314,11 @@ module MongoSolr
             id = oplog_entry["o"]["_id"]
             db_name, coll_name = get_db_and_coll_from_ns(namespace)
 
-            # Check if document exists in the mongos. If it does, it implies that this delete
+            # Check if document exists in the mongos. If it does, it implies that this insert
             # operation is part of a chunk migration.
-            count = @db_connection[db_name][coll_name].find({ "_id" => id }).count
-            next if count >= 1
+            cursor = @db_connection[db_name][coll_name].find({ "_id" => id })
+            count = retry_until_ok { cursor.count }
+            next unless count.zero?
           end
 
           @logger.info "#{@name}: adding #{doc.inspect}"
@@ -344,8 +345,9 @@ module MongoSolr
 
             # Check if document exists in the mongos. If it does, it implies that this delete
             # operation is part of a chunk migration.
-            count = @db_connection[db_name][coll_name].find({ "_id" => id }).count
-            next if count >= 1
+            cursor = @db_connection[db_name][coll_name].find({ "_id" => id })
+            count = retry_until_ok { cursor.count }
+            next unless count.zero?
           end
 
           to_update.delete(id)
