@@ -18,16 +18,13 @@ class ShardingTest < Test::Unit::TestCase
   TIMEOUT = 10
   DEFAULT_LOGGER = Logger.new("/dev/null")
 
+  # Setup a shard cluster with 2 shards.
+  #
+  # @param shard [ShardManager] The shard manager.
   def self.setup_shard(shard)
-    shard.start
-
-    begin
-      mongos = shard.connection
-    rescue => e
-      # Keep on retrying to establish connection to mongos
-      retry
-    end
-
+    shard.start(2)
+    
+    mongos = shard.connection
     coll = mongos[DB_NAME].create_collection(COLL_NAME)
     coll.create_index([[SHARD_KEY, Mongo::ASCENDING]])
 
@@ -36,12 +33,17 @@ class ShardingTest < Test::Unit::TestCase
     db.command({ "shardcollection" => NS, "key" => { SHARD_KEY => 1 }})
   end
 
-  def self.presplit(shard, mid_val)
+  # Splits the range of values and assign the new chunk to the nth shard.
+  #
+  # @param shard [ShardManager] The shard manager instance.
+  # @param mid_val [Integer] The split value.
+  # @param n [Integer] The nth shard.
+  def self.presplit(shard, mid_val, n)
     mongo = shard.connection
     coll = mongo[DB_NAME][COLL_NAME]
 
     shard_coll = mongo["config"]["shards"]
-    shard_dest = shard_coll.find.to_a[1]["_id"]
+    shard_dest = shard_coll.find.to_a[n]["_id"]
 
     admin_db = mongo["admin"]
 
@@ -52,7 +54,7 @@ class ShardingTest < Test::Unit::TestCase
 
   context "basic" do
     setup do
-      @cluster = ShardManager.instance
+      @cluster = ShardManager.new
       ShardingTest.setup_shard(@cluster)
 
       @mongos = @cluster.connection
@@ -81,7 +83,7 @@ JAVASCRIPT
     end
 
     should "update Solr with updates to 2 different chunks" do
-      ShardingTest.presplit(@cluster, 50)
+      ShardingTest.presplit(@cluster, 50, 1)
       mock = mock()
       mock.expects(:daemon_end).once
 
@@ -101,7 +103,7 @@ JAVASCRIPT
     end
 
     should "update Solr when deletion occured" do
-      ShardingTest.presplit(@cluster, 50)
+      ShardingTest.presplit(@cluster, 50, 1)
       doc = { SHARD_KEY => "for_deletion" }
       doc_id = @coll.insert(doc)
       mock = mock()
@@ -141,9 +143,9 @@ JAVASCRIPT
       end
 
       should "only dump contents from own shard" do
-        ShardingTest.presplit(@cluster, 50)
+        ShardingTest.presplit(@cluster, 50, 1)
 
-        mongo = Mongo::Connection.new("localhost", ShardManager::SHARD1_PORT)
+        mongo = @cluster.shard_connection(0)
         oplog_coll = get_oplog_collection(mongo, :auto)
 
         solr_sync = SolrSynchronizer.
@@ -169,7 +171,7 @@ JAVASCRIPT
 
       context "chunk migration" do
         should "not delete docs at FROM shard" do
-          mongo = Mongo::Connection.new("localhost", ShardManager::SHARD1_PORT)
+          mongo = @cluster.shard_connection(0)
           oplog_coll = get_oplog_collection(mongo, :auto)
 
           solr_sync = SolrSynchronizer.
@@ -177,7 +179,7 @@ JAVASCRIPT
 
           solr_sync.sync do |mode, doc_count|
             if mode == :finished_dumping then
-              ShardingTest.presplit(@cluster, 50)
+              ShardingTest.presplit(@cluster, 50, 1)
               @mock_solr.expects(:add).never
             else
               break
@@ -186,7 +188,7 @@ JAVASCRIPT
         end
 
         should "not insert docs at TO shard" do
-          mongo = Mongo::Connection.new("localhost", ShardManager::SHARD2_PORT)
+          mongo = @cluster.shard_connection(1)
           oplog_coll = get_oplog_collection(mongo, :auto)
 
           solr_sync = SolrSynchronizer.
@@ -194,7 +196,7 @@ JAVASCRIPT
 
           solr_sync.sync do |mode, doc_count|
             if mode == :finished_dumping then
-              ShardingTest.presplit(@cluster, 50)
+              ShardingTest.presplit(@cluster, 50, 1)
               @mock_solr.expects(:add).never
             else
               break
