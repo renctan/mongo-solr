@@ -126,6 +126,40 @@ JAVASCRIPT
       end
     end
 
+    should "detect new shards" do
+      mock = mock()
+      mock.expects(:daemon_end).once
+
+      run_daemon("-p #{ShardManager::MONGOS_PORT}") do
+        midval = 60
+        doc = { SHARD_KEY => midval }
+        doc_id = @coll.insert(doc)
+
+        result = retry_until_true(TIMEOUT) do
+          response = @solr.select({ :params => { :q => "_id:#{doc_id}" }})
+          solr_doc = response["response"]["docs"].first
+          not solr_doc.nil?
+        end
+
+        # Not the main test, used only for synchronization
+        assert(result, "Failed to index to Solr within #{TIMEOUT} seconds")
+
+        id = @cluster.add_shard
+        ShardingTest.presplit(@cluster, midval, id)
+
+        doc_id = @coll.insert(doc.merge({ :val => "duplicate" }))
+
+        result = retry_until_true(TIMEOUT) do
+          response = @solr.select({ :params => { :q => "_id:#{doc_id}" }})
+          solr_doc = response["response"]["docs"].first
+          not solr_doc.nil?
+        end
+
+        assert(result, "Failed to update Solr within #{TIMEOUT} seconds")
+        mock.daemon_end
+      end
+    end
+
     context "SolrSynchronizer" do
       setup do
         @config_writer = stub_everything("config_writer")
