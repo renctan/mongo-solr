@@ -23,6 +23,7 @@ require "#{PROJ_SRC_PATH}/solr_synchronizer"
 require "#{PROJ_SRC_PATH}/argument_parser"
 require "#{PROJ_SRC_PATH}/config_writer"
 require "#{PROJ_SRC_PATH}/solr_config_const"
+require "#{PROJ_SRC_PATH}/util"
 
 TEST_DB = "MongoSolrUpdateTestBenchmark"
 TEST_COLLECTION = "sink"
@@ -141,6 +142,8 @@ class RandomDocGen
 end
 
 if $0 == __FILE__ then
+  include MongoSolr::Util
+
   options = parse_options(ARGV)
   mongo = Mongo::Connection.new(options.mongo_loc, options.mongo_port)
   solr_loc = options.solr_server
@@ -152,7 +155,9 @@ if $0 == __FILE__ then
   config_coll = mongo[TEST_DB]["msolr"]
   config_coll.insert({ MongoSolr::SolrConfigConst::SOLR_URL_KEY => solr_loc,
                        MongoSolr::SolrConfigConst::NS_KEY => TEST_NS })
-  config_writer = MongoSolr::ConfigWriter.new(solr_loc, config_coll)
+  config_writer = MongoSolr::ConfigWriter.new(config_coll, solr_loc)
+  oplog_coll = get_oplog_collection(mongo, :auto)
+
 
   # Variables used inside sync block
   pid = nil
@@ -169,7 +174,7 @@ if $0 == __FILE__ then
 
   docs_indexed = 0
 
-  solr = MongoSolr::SolrSynchronizer.new(solr_client, mongo, config_writer, opt)
+  solr = MongoSolr::SolrSynchronizer.new(solr_client, mongo, oplog_coll, config_writer, opt)
   solr.sync do |mode, doc_count|
     if mode == :finished_dumping then
       start_time = Time.now
