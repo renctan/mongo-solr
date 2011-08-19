@@ -457,7 +457,7 @@
    <!-- BSON Timestamp that will be used when rollbacks happen. http://bsonspec.org/#/specification -->
    <field name="$ts" type="long" indexed="true" stored="true" required="true" omitNorms="true" omitTermFreqAndPositions="true" />
    <!-- Used during rollback to do a reverse lookup of the document from MongoDB -->
-   <field name="$ns" type="string" indexed="false" stored="true" required="true" />
+   <field name="$ns" type="string" indexed="true" stored="true" required="true" omitNorms="true" omitTermFreqAndPositions="true" />
 
    <!-- Used to label documents instead of actually deleting them so it can easily be reverted back when a rollback happens -->
    <field name="$deleted" type="boolean" indexed="true" stored="true" required="false" omitNorms="true" omitTermFreqAndPositions="true" />
