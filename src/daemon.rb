@@ -34,7 +34,13 @@ module MongoSolr
     def stop
       unless @thread.nil? then
         @solr.stop!
-        @thread.join
+
+        begin
+          @thread.join
+        rescue RetryFailedException
+          # Just capture this exception but do nothing
+        end
+
         @thread = nil
       end
     end

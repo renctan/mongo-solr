@@ -8,6 +8,7 @@ require_relative "document_transform"
 require_relative "exception"
 require_relative "synchronized_hash"
 require_relative "solr_retry_decorator"
+require_relative "mutex_obj_pair"
 require_relative "util"
 
 module MongoSolr
@@ -64,7 +65,13 @@ module MongoSolr
       @oplog_coll = oplog_coll
       @config_writer = config_writer
 
-      @solr = SolrRetryDecorator.new(solr, @err_retry_interval, @logger)
+      # True to tell the sync thread to stop.
+      @stop = MutexObjPair.new(false)
+
+      # True if this object is currently performing a sync with the database
+      @is_synching = MutexObjPair.new(false)
+
+      @solr = SolrRetryDecorator.new(solr, @err_retry_interval, @stop, @logger)
 
       # The set of collections to listen to for updates in the oplogs.
       ns_set = opt[:ns_set] || {}
@@ -73,29 +80,14 @@ module MongoSolr
 
       # The oplog data for collections that are still in the process of dumping.
       @oplog_backlog = MongoSolr::SynchronizedHash.new
-
-      # Locks should be taken in this order to avoid deadlock
-      @stop_mutex = Mutex.new
-      @synching_mutex = Mutex.new
-
-      # implicit ns_set mutex
-      # implicit synching_set mutex
-
-      # True to tell the sync thread to stop.
-      # protected by @stop_mutex
-      @stop = false
-
-      # True if this object is currently performing a sync with the database
-      # protected by @synching_mutex
-      @is_synching = false 
     end
 
     # Stop the sync operation
     def stop!
       # Lock usage:
-      # 1. @stop_mutex
+      # 1. @stop.mutex
 
-      @stop_mutex.synchronize { @stop = true }
+      @stop.set(true)
     end
 
     # Replaces the current set of collection to listen with a new one.
@@ -117,9 +109,9 @@ module MongoSolr
       new_ns_set = opt[:ns_set]
 
       unless new_ns_set.nil? then
-        @synching_mutex.synchronize do
+        @is_synching.use do |is_synching, is_synching_mutex|
           diff = new_ns_set.reject { |k, v| @ns_set.has_key?(k) }
-          add_namespace(diff, checkpoint_opt, @is_synching, wait, &block)
+          add_namespace(diff, checkpoint_opt, is_synching, wait, &block)
 
           @ns_set = Hamster.hash(new_ns_set)
         end
@@ -149,17 +141,17 @@ module MongoSolr
     # solr.sync({ :db_pass => auth, :interval => 1 })
     def sync(&block)
       # Lock usage:
-      # 1. @stop_mutex->@synching_mutex
+      # 1. @stop.mutex->@is_synching.mutex
       # 2. insert_to_backlog()
       # 3. stop_synching?()
 
-      @stop_mutex.synchronize do
-        @synching_mutex.synchronize do
-          if @is_synching then
+      @stop.use do |stop, stop_mutex|
+        @is_synching.use do |is_synching, is_synching_mutex|
+          if is_synching then
             return
           else
-            @stop = false
-            @is_synching = true
+            @stop.set_wo_lock(false)
+            @is_synching.set_wo_lock(true)
           end
         end
       end
@@ -406,7 +398,7 @@ module MongoSolr
     end
 
     # Adds a collection without using a lock. Caller should be holding the lock for
-    # @synching_mutex while calling this method.
+    # @is_synching.mutex while calling this method.
     #
     # @param new_ns
     # @param checkpoint [MongoSolr::CheckpointData] The checkpoint data, ignored if nil.
@@ -460,13 +452,13 @@ module MongoSolr
     # @return true when the sync thread needs to stop.
     def stop_synching?
       # Lock usage:
-      # 1. @stop_mutex->@synching_mutex
+      # 1. @stop.mutex->@is_synching.mutex
 
       do_stop = false
 
-      @stop_mutex.synchronize do
-        if @stop then
-          @synching_mutex.synchronize { @is_synching = false }
+      @stop.use do |stop, stop_mutex|
+        if stop then
+          @is_synching.set(false)
           do_stop = true
         end
       end
@@ -508,6 +500,9 @@ module MongoSolr
     #
     # @return [Object] the return value of the block.
     def retry_until_ok(&block)
+      # Lock usage:
+      # 1. @stop.mutex
+
       begin
         yield block
       rescue OplogException, StaleCursorException
@@ -515,7 +510,13 @@ module MongoSolr
       rescue => e
         @logger.error "#{@name}: #{get_full_exception_msg(e)}"
         sleep @err_retry_interval
-        retry
+
+        do_stop = @stop.use { |stop, mutex| stop }
+        if do_stop then
+          raise RetryFailedException.new(e)
+        else
+          retry
+        end
       end
     end
 
@@ -793,8 +794,12 @@ module MongoSolr
       fields = @ns_set[ns]
 
       unless fields.nil? or fields.empty? then
-        new_doc = doc.reject { |k, v| !(fields.include?(k)) }
-        new_doc["_id"] = doc["_id"]
+        new_doc = { "_id" => doc["_id"] }
+
+        doc.each do |k, v|
+          new_doc[k] = v if fields.include?(k)
+        end
+
         doc = new_doc
       end
 

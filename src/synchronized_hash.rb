@@ -1,28 +1,20 @@
+require "forwardable"
+require_relative "mutex_obj_pair"
+
 module MongoSolr
   # A simple wrapper class for accessing a hash with a mutex.
   class SynchronizedHash
+    extend Forwardable
+
+    def_delegator :@hash, :use
+
     # @param hash [Hash] ({}) An initial hash to populate this object.
     def initialize(hash = {})
-      @hash_mutex = Mutex.new
-
-      # Protected by @hash_mutex
-      @hash = hash.clone
-    end
-
-    # Use the hash.  Use this method if you want to hold the lock while doing several
-    # operations.
-    #
-    # @param block [Proc(hash [Hash], lock [Mutex])] The code to execute when using the hash.
-    #   The entire block is executed while holding a lock. The lock object is also provided
-    #   to more fine grain control like releasing the lock.
-    #
-    # @return [Object] the return value of the block
-    def use(&block)
-      @hash_mutex.synchronize { yield @hash, @hash_mutex }
+      @hash = MutexObjPair.new(hash.clone)
     end
 
     def method_missing(sym, *args, &block)
-      @hash_mutex.synchronize { @hash.send(sym, *args, &block) }
+      @hash.use { |hash, mutex| hash.send(sym, *args, &block) }
     end
   end
 end

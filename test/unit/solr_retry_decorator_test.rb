@@ -1,10 +1,12 @@
 require File.expand_path("../../test_helper", __FILE__)
 require "#{PROJ_SRC_PATH}/solr_retry_decorator"
+require "#{PROJ_SRC_PATH}/mutex_obj_pair"
 
 class SolrRetryDecoratorTest < Test::Unit::TestCase
   context "Basic Test" do
     setup do
       @error = states("error").starts_as("yes")
+      @stop = MongoSolr::MutexObjPair.new(false)
       @solr = mock()
     end
 
@@ -14,7 +16,7 @@ class SolrRetryDecoratorTest < Test::Unit::TestCase
       @solr.stubs(:add).raises(RuntimeError).when(@error.is("yes")).then(@error.is("no"))
       @solr.expects(:add).once.with(doc).when(@error.is("no"))
 
-      solr_retry = MongoSolr::SolrRetryDecorator.new(@solr, 0, nil)
+      solr_retry = MongoSolr::SolrRetryDecorator.new(@solr, 0, @stop, nil)
       solr_retry.add doc
     end
 
@@ -22,7 +24,7 @@ class SolrRetryDecoratorTest < Test::Unit::TestCase
       @solr.stubs(:commit).raises(RuntimeError).when(@error.is("yes")).then(@error.is("no"))
       @solr.expects(:commit).once.with().when(@error.is("no"))
 
-      solr_retry = MongoSolr::SolrRetryDecorator.new(@solr, 0, nil)
+      solr_retry = MongoSolr::SolrRetryDecorator.new(@solr, 0, @stop, nil)
       solr_retry.commit
     end
 
@@ -33,7 +35,7 @@ class SolrRetryDecoratorTest < Test::Unit::TestCase
         raises(RuntimeError).when(@error.is("yes")).then(@error.is("no"))
       @solr.expects(:delete_by_id).once.with(id).when(@error.is("no"))
 
-      solr_retry = MongoSolr::SolrRetryDecorator.new(@solr, 0, nil)
+      solr_retry = MongoSolr::SolrRetryDecorator.new(@solr, 0, @stop, nil)
       solr_retry.delete_by_id id
     end
 
@@ -43,8 +45,16 @@ class SolrRetryDecoratorTest < Test::Unit::TestCase
       logger = mock()
       logger.expects(:error).once
 
-      solr_retry = MongoSolr::SolrRetryDecorator.new(@solr, 0, logger)
+      solr_retry = MongoSolr::SolrRetryDecorator.new(@solr, 0, @stop, logger)
       solr_retry.add
+    end
+
+    should "raise when stop is true" do
+      @solr.stubs(:add).raises(RuntimeError)
+      @stop.set(true)
+
+      solr_retry = MongoSolr::SolrRetryDecorator.new(@solr, 0, @stop, nil)
+      assert_raise(MongoSolr::RetryFailedException) { solr_retry.add }
     end
   end
 end

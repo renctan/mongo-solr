@@ -11,9 +11,11 @@ module MongoSolr
 
     # @param solr [RSolr::Client] The Solr client to wrap.
     # @param retry_interval [number] Time in seconds to wait until retrying a failed invocation.
-    # @param logger [Logger] The logger to use when outputting errors encountered.
-    def initialize(solr, retry_interval, logger = nil)
+    # @param stop_obj [MutexObjPair] An object used for telling to stop retrying.
+    # @param logger [Logger](nil) The logger to use when outputting errors encountered.
+    def initialize(solr, retry_interval, stop_obj, logger = nil)
       @solr = solr
+      @stop_obj = stop_obj
       @logger = logger
       @interval = retry_interval
     end
@@ -31,7 +33,13 @@ module MongoSolr
           rescue => e
             @logger.error get_full_exception_msg(e) unless @logger.nil?
             sleep @interval
-            retry
+
+            do_stop = @stop_obj.use { |stop, mutex| stop }
+            if do_stop then
+              raise RetryFailedException.new(e)
+            else
+              retry
+            end
           end
         end
       end
