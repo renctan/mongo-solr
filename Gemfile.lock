@@ -3,6 +3,7 @@ GEM
   specs:
     bson (1.3.1)
     builder (3.0.0)
+    hamster (0.4.2)
     mocha (0.9.12)
     mongo (1.3.1)
       bson (>= 1.3.1)
@@ -15,6 +16,7 @@ PLATFORMS
   ruby
 
 DEPENDENCIES
+  hamster
   mocha
   mongo
   rsolr
