@@ -51,6 +51,16 @@ class ReplicaSetDetectionTest < Test::Unit::TestCase
       assert(connection.is_a?(Mongo::ReplSetConnection),
              "Connection is a #{connection.class}!")
     end
+
+    should "set connection properties correctly" do
+      opt = {
+        :pool_size => 10
+      }
+
+      mongo = Mongo::Connection.new(@rs.host, @rs.ports[1])
+      connection = upgrade_to_replset(mongo, opt)
+      assert_equal(opt[:pool_size], connection.pool_size)
+    end
   end
 end
 

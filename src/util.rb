@@ -1,3 +1,4 @@
+require "rubygems"
 require "open-uri"
 require "bson"
 require_relative "exception"
@@ -116,8 +117,9 @@ module MongoSolr
 
         args = member_list
         args << { :rs_name => stat["set"] }
+        args << opts
 
-        mongo = Mongo::ReplSetConnection.new(*args, opts)
+        mongo = Mongo::ReplSetConnection.new(*args)
       rescue Mongo::OperationFailure => e
         raise unless e.message =~ /--replSet/i
       end
