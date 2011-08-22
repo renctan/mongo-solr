@@ -56,7 +56,15 @@ if $0 == __FILE__ then
   if (mongo_loc =~ /^mongodb:\/\//) then
     mongo = Mongo::Connection.from_uri(mongo_loc, connection_opts)
   else
-    mongo = Mongo::Connection.new(mongo_loc, options.mongo_port, connection_opts)
+    mongo_host, mongo_port = mongo_loc.split(":")
+
+    if mongo_port.nil? then
+      mongo_port = options.mongo_port
+    else
+      mongo_port = mongo_port.to_i
+    end
+
+    mongo = Mongo::Connection.new(mongo_host, mongo_port, connection_opts)
     connected_to_mongos = is_mongos?(mongo)
     mongo = upgrade_to_replset(mongo, connection_opts) unless connected_to_mongos
   end
