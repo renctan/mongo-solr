@@ -40,36 +40,29 @@ def is_mongos?(mongo)
   reply["errmsg"].nil?
 end
 
-if $0 == __FILE__ then
+# Calculates the approximate size needed for the connection pool.
+#
+# @param mongo [Mongo::Connection] The MongoDB connection to check.
+# @param is_mongos [Boolean] True if the mongo connection is to a mongos.
+#
+# return [Integer] the approximate pool size needed.
+def calc_pool_size(mongo, is_mongos)
+  solr_server_count = 2 # Wild guess on the number of Solr servers the user will connect to
+  ret = solr_server_count
+
+  ret *= (mongo["config"]["shards"].find.count + 1) if is_mongos
+
+  return ret
+end
+
+# Runs the daemon.
+#
+# @param mongo [Mongo::Connection] The connection to the Mongo instance to synchronize.
+# @param connected_to_mongos [Boolean] True if mongo is connected to a mongos.
+# @param options [OpenStruct] Structure that contains the arguments passed by the user.
+def run_daemon(mongo, connected_to_mongos, options)
   include MongoSolr
   include MongoSolr::Util
-
-  options = ArgumentParser.parse_options(ARGV)
-
-  mongo_loc = options.mongo_loc
-  connected_to_mongos = false
-  connection_opts = {
-    :pool_size => options.conn_pool_size,
-    :pool_timeout => 5
-  }
-
-  if (mongo_loc =~ /^mongodb:\/\//) then
-    mongo = Mongo::Connection.from_uri(mongo_loc, connection_opts)
-  else
-    mongo_host, mongo_port = mongo_loc.split(":")
-
-    if mongo_port.nil? then
-      mongo_port = options.mongo_port
-    else
-      mongo_port = mongo_port.to_i
-    end
-
-    mongo = Mongo::Connection.new(mongo_host, mongo_port, connection_opts)
-    connected_to_mongos = is_mongos?(mongo)
-    mongo = upgrade_to_replset(mongo, connection_opts) unless connected_to_mongos
-  end
-
-  authenticate_to_db(mongo, options.auth)
 
   logger = Logger.new(STDOUT)
 
@@ -80,6 +73,8 @@ if $0 == __FILE__ then
     :interval => options.interval,
     :logger => logger
   }
+
+  logger = daemon_opt[:logger]
 
   config_db_name = MongoDBConfigSource.get_config_db_name(mongo)
   config_coll = mongo[config_db_name][SolrConfigConst::CONFIG_COLLECTION_NAME]
@@ -128,5 +123,54 @@ if $0 == __FILE__ then
 
   logger.info("MongoSolr daemon v#{MongoSolr::VERSION} running.")
   sleep # Do nothing. Wait for SIGTERM/SIGINT.
+end
+
+if $0 == __FILE__ then
+  include MongoSolr::Util
+
+  options = MongoSolr::ArgumentParser.parse_options(ARGV)
+
+  mongo_loc = options.mongo_loc
+  connected_to_mongos = false
+
+  connection_opts = {
+    :pool_timeout => 5
+  }
+
+  if (mongo_loc =~ /^mongodb:\/\//) then
+    mongo = Mongo::Connection.from_uri(mongo_loc)
+    connected_to_mongos = is_mongos?(mongo)
+
+    pool_size = options.conn_pool_size
+    pool_size = calc_pool_size(mongo, connected_to_mongos) if pool_size.nil?
+    connection_opts[:pool_size] = pool_size
+
+    mongo = Mongo::Connection.from_uri(mongo_loc, connection_opts)
+  else
+    mongo_host, mongo_port = mongo_loc.split(":")
+
+    if mongo_port.nil? then
+      mongo_port = options.mongo_port
+    else
+      mongo_port = mongo_port.to_i
+    end
+
+    mongo = Mongo::Connection.new(mongo_host, mongo_port)
+    connected_to_mongos = is_mongos?(mongo)
+
+    if options.conn_pool_size.nil? then
+      pool_size = calc_pool_size(mongo, connected_to_mongos)
+    else
+      pool_size = options.conn_pool_size
+    end
+
+    connection_opts[:pool_size] = pool_size
+
+    mongo = Mongo::Connection.new(mongo_host, mongo_port, connection_opts)
+    mongo = upgrade_to_replset(mongo, connection_opts) unless connected_to_mongos
+  end
+
+  authenticate_to_db(mongo, options.auth)
+  run_daemon(mongo, connected_to_mongos, options)
 end
 
