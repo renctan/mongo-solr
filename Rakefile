@@ -1,3 +1,4 @@
+# -*- mode: ruby; -*-
 require "rubygems"
 require "rake/testtask"
 
@@ -5,11 +6,11 @@ task :test do
   Rake::Task["test:all"].invoke
 end
 
-namespace "test" do
-  desc "Runs all tests"
+namespace :test do
+  desc "Run all tests"
   task :all => [:js, :unit, :integration, :slow]
 
-  desc "Runs the tests for the js Mongo Shell plugin"
+  desc "Run the tests for the js Mongo Shell plugin"
   task :js do
     orig_dir = Dir.pwd
     Dir.chdir("test/js")
@@ -18,19 +19,19 @@ namespace "test" do
     Dir.chdir orig_dir
   end
 
-  desc "Runs the unit tests"
+  desc "Run the unit tests"
   Rake::TestTask.new(:unit) do |t|
     t.test_files = FileList["test/unit/*_test.rb"]
     t.verbose = true
   end
 
-  desc "Runs the integration tests"
+  desc "Run the integration tests"
   Rake::TestTask.new(:integration) do |t|
     t.test_files = FileList["test/integration/*_test.rb"]
     t.verbose = true
   end
 
-  desc "Runs the very slow tests"
+  desc "Run the very slow tests"
   Rake::TestTask.new(:slow) do |t|
     t.test_files = FileList["test/slow_tests/*_test.rb"]
     t.verbose = true
@@ -67,5 +68,14 @@ desc "Build the Mongo Shell plugin js file from scratch."
 task :rebuild do
   rm FileList["*.js"]
   Rake::Task[:build].invoke
+end
+
+namespace :gem do
+  desc "Install the gem locally"
+  task :install do
+    `gem build msolr.gemspec`
+    `gem install --no-rdoc --no-ri msolr-*.gem`
+    `rm msolr-*.gem`
+  end
 end
 

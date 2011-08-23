@@ -17,6 +17,9 @@ end
 require_relative "../lib/msolr"
 require_relative "../lib/version"
 
+include MongoSolr
+include MongoSolr::Util
+
 # Checks whether a connection is connected to a mongos process
 #
 # @param mongo [Mongo::Connection] The connection to check.
@@ -48,9 +51,6 @@ end
 # @param connected_to_mongos [Boolean] True if mongo is connected to a mongos.
 # @param options [OpenStruct] Structure that contains the arguments passed by the user.
 def run_daemon(mongo, connected_to_mongos, options)
-  include MongoSolr
-  include MongoSolr::Util
-
   logger = Logger.new(STDOUT)
 
   daemon_opt = {
@@ -112,52 +112,51 @@ def run_daemon(mongo, connected_to_mongos, options)
   sleep # Do nothing. Wait for SIGTERM/SIGINT.
 end
 
-if $0 == __FILE__ then
-  include MongoSolr::Util
+################################################################################
+#   Main body
 
-  options = MongoSolr::ArgumentParser.parse_options(ARGV)
+options = MongoSolr::ArgumentParser.parse_options(ARGV)
 
-  mongo_loc = options.mongo_loc
-  connected_to_mongos = false
+mongo_loc = options.mongo_loc
+connected_to_mongos = false
 
-  connection_opts = {
-    :pool_timeout => 5
-  }
+connection_opts = {
+  :pool_timeout => 5
+}
 
-  if (mongo_loc =~ /^mongodb:\/\//) then
-    mongo = Mongo::Connection.from_uri(mongo_loc)
-    connected_to_mongos = is_mongos?(mongo)
+if (mongo_loc =~ /^mongodb:\/\//) then
+  mongo = Mongo::Connection.from_uri(mongo_loc)
+  connected_to_mongos = is_mongos?(mongo)
 
-    pool_size = options.conn_pool_size
-    pool_size = calc_pool_size(mongo, connected_to_mongos) if pool_size.nil?
-    connection_opts[:pool_size] = pool_size
+  pool_size = options.conn_pool_size
+  pool_size = calc_pool_size(mongo, connected_to_mongos) if pool_size.nil?
+  connection_opts[:pool_size] = pool_size
 
-    mongo = Mongo::Connection.from_uri(mongo_loc, connection_opts)
+  mongo = Mongo::Connection.from_uri(mongo_loc, connection_opts)
+else
+  mongo_host, mongo_port = mongo_loc.split(":")
+
+  if mongo_port.nil? then
+    mongo_port = options.mongo_port
   else
-    mongo_host, mongo_port = mongo_loc.split(":")
-
-    if mongo_port.nil? then
-      mongo_port = options.mongo_port
-    else
-      mongo_port = mongo_port.to_i
-    end
-
-    mongo = Mongo::Connection.new(mongo_host, mongo_port)
-    connected_to_mongos = is_mongos?(mongo)
-
-    if options.conn_pool_size.nil? then
-      pool_size = calc_pool_size(mongo, connected_to_mongos)
-    else
-      pool_size = options.conn_pool_size
-    end
-
-    connection_opts[:pool_size] = pool_size
-
-    mongo = Mongo::Connection.new(mongo_host, mongo_port, connection_opts)
-    mongo = upgrade_to_replset(mongo, connection_opts) unless connected_to_mongos
+    mongo_port = mongo_port.to_i
   end
 
-  authenticate_to_db(mongo, options.auth)
-  run_daemon(mongo, connected_to_mongos, options)
+  mongo = Mongo::Connection.new(mongo_host, mongo_port)
+  connected_to_mongos = is_mongos?(mongo)
+
+  if options.conn_pool_size.nil? then
+    pool_size = calc_pool_size(mongo, connected_to_mongos)
+  else
+    pool_size = options.conn_pool_size
+  end
+
+  connection_opts[:pool_size] = pool_size
+
+  mongo = Mongo::Connection.new(mongo_host, mongo_port, connection_opts)
+  mongo = upgrade_to_replset(mongo, connection_opts) unless connected_to_mongos
 end
+
+authenticate_to_db(mongo, options.auth)
+run_daemon(mongo, connected_to_mongos, options)
 

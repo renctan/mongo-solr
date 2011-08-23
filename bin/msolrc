@@ -3,10 +3,8 @@
 # A very simple script to start the Mongo shell preloaded with the plugin.
 # This script assumes that the Mongo shell is in the executable path.
 
-if __FILE__ == $0 then
-  JS_PLUGIN_PATH = File.expand_path("../../solr-plugin.js", __FILE__)
+JS_PLUGIN_PATH = File.expand_path("../../solr-plugin.js", __FILE__)
 
-  puts "Loading MongoSolr extensions..."
-  exec "mongo #{ARGV.join(" ")} --eval \"load(\\\"#{JS_PLUGIN_PATH}\\\")\" --shell"
-end
+puts "Loading MongoSolr extensions..."
+exec "mongo #{ARGV.join(" ")} --eval \"load(\\\"#{JS_PLUGIN_PATH}\\\")\" --shell"
 

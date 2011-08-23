@@ -1,9 +1,8 @@
 source 'http://rubygems.org'
 
-gem "rsolr"
-gem "mongo"
+gemspec
+
 gem "shoulda"
 gem "mocha"
 gem "test-unit", ">= 2.3.0"
-gem "hamster"
 
