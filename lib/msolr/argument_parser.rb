@@ -1,5 +1,6 @@
 require "optparse"
 require "ostruct"
+require_relative "../version"
 
 module MongoSolr
   # A simple helper class for parsing command line options.
@@ -103,6 +104,13 @@ module MongoSolr
                 "connect to a huge sharded cluster or",
                 "several Solr servers.") do |val|
           options.conn_pool_size = val
+        end
+
+        opts.separator ""
+        opts.on("-v", "--version",
+                "Prints out the version number.") do
+          puts "msolrd #{VERSION}"
+          exit
         end
 
 #        opts.separator ""
