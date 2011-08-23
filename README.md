@@ -15,7 +15,7 @@ Please check out the wiki for more details about this project.
 
 # Known issues
 
-* There is an issue with the BSON extension binary that comes with the Ruby driver that will cause the daemon to run in unexpected ways. This is a machine dependent bug and to check if you're machine is susceptible to this issue, try executing this (snippet)[https://gist.github.com/92eb07eebfe362a7f97c] in the Ruby interpreter. The output of BSON Ruby and C should be the same.
+* There is an issue with the BSON extension binary that comes with the Ruby driver that will cause the daemon to run in unexpected ways. This is a machine dependent bug and to check if you're machine is susceptible to this issue, try executing this [snippet](https://gist.github.com/92eb07eebfe362a7f97c) in the Ruby interpreter. The output of BSON Ruby and C should be the same.
 
 # Ruby version
 
