@@ -292,6 +292,22 @@ module MongoSolr
     # @param do_timestamp_commit [Boolean] (false) Record the timestamp when commiting to
     #   Solr
     def update_solr(oplog_doc_entries, do_timestamp_commit = false)
+      # This method has a special treatment on a sharded setup. Every insert and remove
+      # operations are checked to confirm if they exists by asking mongos. This is used
+      # to differentiate an actual delete/insert operation from a delete/insert during
+      # chunk migrations. There are also a couple of reasons for not using the changelog
+      # or chunks collections for this purpose:
+      #
+      # 1. Implementing the check on mongos is relatively easy and the correctness is also
+      #    easy to reason about.
+      # 2. The bookkeeping for the ranges add extra complexity to the code.
+      # 3. There is no reliable way of relating the timestamp used in the changelog to
+      #    the oplog and reason out which operations in the oplog are part of a migration.
+      #    And worse of all, there is no easy way to detect accidental deletions.
+      # 4. The range info is only available for the shard keys. Since the normal oplog
+      #    entry only contains the _id, there will be no way to find out if the document
+      #    falls within the range if _id field is not sharded.
+
       update_list = {}
       timestamp = nil
 
