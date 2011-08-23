@@ -44,7 +44,7 @@ end
 file "solr.js" do
   # Note: sequence is relevant. Dependent files should be placed before files it depend.
   js_files = %w[msolr_const util msolr_server msolr]
-  js_opt_arr = js_files.map { |file| "--js=src/js/#{file}.js" }
+  js_opt_arr = js_files.map { |file| "--js=lib/js/#{file}.js" }
   js_opt_str = js_opt_arr.join(" ")
 
   system("java -jar compiler.jar #{js_opt_str} --js_output_file=solr.js")
@@ -53,7 +53,7 @@ end
 file "solr-plugin.js" => "solr.js" do |task|
   # Note: sequence is relevant. Dependent files should be placed before files it depend.
   js_files = task.prerequisites
-  js_files << "src/js/msolr_plugin.js"
+  js_files << "lib/js/msolr_plugin.js"
   js_opt_arr = js_files.map { |file| "--js=#{file}" }
   js_opt_str = js_opt_arr.join(" ")
 

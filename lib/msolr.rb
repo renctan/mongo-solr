@@ -1,0 +1,11 @@
+require_relative "msolr/util"
+require_relative "msolr/daemon"
+require_relative "msolr/argument_parser"
+require_relative "msolr/mongodb_config_source"
+require_relative "msolr/config_writer"
+require_relative "msolr/shard_config_writer"
+require_relative "msolr/config_format_reader"
+require_relative "msolr/solr_config_const"
+require_relative "msolr/object_builder"
+require_relative "msolr/cleanup"
+

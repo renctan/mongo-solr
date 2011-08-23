@@ -4,7 +4,6 @@
 # Solr and continiously updates it with changes on the database. Run the script with
 # --help for more details on possible options.
 
-
 # Copy and pasted from:
 # http://stackoverflow.com/questions/4333286/ruby-require-vs-require-relative-best-practice-to-workaround-running-in-both-r/4718414#4718414
 unless Kernel.respond_to?(:require_relative)
@@ -15,20 +14,8 @@ unless Kernel.respond_to?(:require_relative)
   end
 end
 
-require_relative "src/util"
-require_relative "src/daemon"
-require_relative "src/argument_parser"
-require_relative "src/mongodb_config_source"
-require_relative "src/config_writer"
-require_relative "src/shard_config_writer"
-require_relative "src/config_format_reader"
-require_relative "src/solr_config_const"
-require_relative "src/object_builder"
-require_relative "src/cleanup"
-
-module MongoSolr
-  VERSION = 0.1
-end
+require_relative "../lib/msolr"
+require_relative "../lib/version"
 
 # Checks whether a connection is connected to a mongos process
 #

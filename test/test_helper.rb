@@ -92,7 +92,7 @@ module TestHelper
   # @param args [String] The arguments to pass to the daemon.
   # @param block [Proc] The procedure to execute before terminating the daemon.
   def run_daemon(args = "", &block)
-    daemon_pio = IO.popen("ruby #{PROJ_SRC_PATH}/../mongo_solr.rb #{args} 2> /dev/null")
+    daemon_pio = IO.popen("ruby #{PROJ_SRC_PATH}/../bin/msolrd #{args} 2> /dev/null")
 
     begin
       yield if block_given?

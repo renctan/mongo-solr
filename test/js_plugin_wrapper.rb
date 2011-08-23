@@ -2,7 +2,7 @@ require File.expand_path("../proj", __FILE__)
 
 # A simple class for executing Javascript codes in the context of the Mongo shell.
 class JSPluginWrapper
-  SOLR_PLUGIN_JS_FILE = "#{PROJ_SRC_PATH}/../solr-plugin.js"
+  SOLR_PLUGIN_JS_FILE = "#{PROJ_SRC_PATH}/../../solr-plugin.js"
   SOLR_LOC = "http://localhost:8983/solr/"
 
   # @param host [String]

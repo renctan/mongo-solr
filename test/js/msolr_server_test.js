@@ -4,7 +4,7 @@
 
 // Namespace wrapper
 (function () {
-var pathPrefix = "../../src/js/";
+var pathPrefix = "../../lib/js/";
 
 load(pathPrefix + "msolr_const.js");
 load(pathPrefix + "util.js");
