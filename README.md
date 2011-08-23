@@ -17,6 +17,10 @@ Please check out the wiki for more details about this project.
 
 * There is an issue with the BSON extension binary that comes with the Ruby driver that will cause the daemon to run in unexpected ways. This is a machine dependent bug and to check if you're machine is susceptible to this issue, try executing this [snippet](https://gist.github.com/92eb07eebfe362a7f97c) in the Ruby interpreter. The output of BSON Ruby and C should be the same.
 
+# TODO
+
+* Provide a secured way of specifying username and password for authenticating the databases.
+
 # Ruby version
 
 The scripts can run on both v1.8.7 and 1.9.x, but it is not fully tested on v1.8.7, so it is recommended to use this with v1.9.
@@ -45,7 +49,7 @@ The integration test uses the following assumptions:
 
 1. The database server is running locally and using port 27107.
 2. The database server is running on a master slave or replica set configuration.
-3. There is no admin user registered on the database.
+3. There is no admin user registered on the database. This is because the tests assumes that no authentication is needed to access the database.
 4. The test sets the output of the logger to "/dev/null" so the system running it should be able
    to understand it.
 5. There is no other process accessing the database server.
