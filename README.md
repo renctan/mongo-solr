@@ -25,11 +25,17 @@ Please check out the wiki for more details about this project.
 
 The scripts can run on both v1.8.7 and 1.9.x, but it is not fully tested on v1.8.7, so it is recommended to use this with v1.9.
 
+# Installation
+
+Simply run the install task to install the dameon and the shell plugin client:
+
+    sudo rake gem:install
+
 # Usage
 
-Simply run the mongo_solr.rb on the root directory. For more details on the configurable options, run the script with the -h option:
+To run the daemon, simply call the executable after installing. For more details on the configurable options, run the script with the -h option:
 
-    ruby mongo_solr.rb -h
+    msolrd -h
 
 # External Gem Dependencies:
 
