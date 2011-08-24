@@ -63,7 +63,7 @@ class SmokeTest < Test::Unit::TestCase
       @js.index_to_solr(TEST_DB, @test_coll.name)
       @test_coll.insert(default_doc.merge({ :x => "hello" }), { :safe => true })
 
-      run_daemon(DAEMON_ARGS) do
+      run_daemon(DAEMON_ARGS) do |pio|
         solr_doc = nil
 
         result = retry_until_true(TIMEOUT) do
@@ -82,7 +82,7 @@ class SmokeTest < Test::Unit::TestCase
       @js.index_to_solr(TEST_DB, @test_coll.name)
       @test_coll.insert(default_doc.merge({ :x => "hello" }), { :safe => true })
 
-      run_daemon(DAEMON_ARGS) do
+      run_daemon(DAEMON_ARGS) do |pio|
         solr_doc = nil
 
         # This block is just for synchronization purposes and is used to make
@@ -113,7 +113,7 @@ class SmokeTest < Test::Unit::TestCase
       @js.index_to_solr(TEST_DB, @test_coll.name)
       @test_coll.insert(default_doc.merge({ :x => "hello" }), { :safe => true })
 
-      run_daemon(DAEMON_ARGS) do
+      run_daemon(DAEMON_ARGS) do |pio|
         solr_doc = nil
 
         # This block is just for synchronization purposes and is used to make
@@ -140,6 +140,65 @@ class SmokeTest < Test::Unit::TestCase
 
         assert(result, "Failed to update Solr within #{TIMEOUT} seconds")
         @mock.daemon_end
+      end
+    end
+
+    context "authentication" do
+      setup do
+        @admin_user = "root"
+        @admin_pwd = "ugat"
+
+        @admin_db = @mongo_conn["admin"]
+        @admin_db.add_user(@admin_user, @admin_pwd)
+        @admin_db.authenticate(@admin_user, @admin_pwd)
+        @auth = { "admin" => { :user => @admin_user, :pwd => @admin_pwd }}
+      end
+
+      teardown do
+        @admin_db.remove_user(@admin_user)
+      end
+
+      should "be able to authenticate interactively" do
+        @js.index_to_solr(TEST_DB, @test_coll.name, @auth)
+        @test_coll.insert(default_doc.merge({ :x => "hello" }), { :safe => true })
+
+        run_daemon(DAEMON_ARGS + " --iauth") do |pio|
+          pio.write "#{@admin_user}\n"
+          pio.write "#{@admin_pwd}\n"
+
+          solr_doc = nil
+          result = retry_until_true(TIMEOUT) do
+            response = @solr.select({ :params => { :q => SOLR_TEST_Q }})
+            solr_doc = response["response"]["docs"].first
+            not solr_doc.nil?
+          end
+
+          assert(result, "Failed to index to Solr within #{TIMEOUT} seconds")
+          assert_equal("hello", solr_doc["x"])
+
+          @mock.daemon_end
+        end
+      end
+
+      should "be able to authenticate using file" do
+        auth_file_path = File.expand_path("../auth_file", __FILE__)
+
+        @js.index_to_solr(TEST_DB, @test_coll.name, @auth)
+        @test_coll.insert(default_doc.merge({ :x => "hello" }), { :safe => true })
+
+        run_daemon(DAEMON_ARGS + " -a #{auth_file_path}") do |pio|
+          solr_doc = nil
+          result = retry_until_true(TIMEOUT) do
+            response = @solr.select({ :params => { :q => SOLR_TEST_Q }})
+            solr_doc = response["response"]["docs"].first
+            not solr_doc.nil?
+          end
+
+          assert(result, "Failed to index to Solr within #{TIMEOUT} seconds")
+          assert_equal("hello", solr_doc["x"])
+
+          @mock.daemon_end
+        end
       end
     end
   end

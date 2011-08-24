@@ -126,6 +126,7 @@ connection_opts = {
 
 if (mongo_loc =~ /^mongodb:\/\//) then
   mongo = Mongo::Connection.from_uri(mongo_loc)
+  authenticate_to_db(mongo, options.auth)
   connected_to_mongos = is_mongos?(mongo)
 
   pool_size = options.conn_pool_size
@@ -143,6 +144,7 @@ else
   end
 
   mongo = Mongo::Connection.new(mongo_host, mongo_port)
+  authenticate_to_db(mongo, options.auth)
   connected_to_mongos = is_mongos?(mongo)
 
   if options.conn_pool_size.nil? then

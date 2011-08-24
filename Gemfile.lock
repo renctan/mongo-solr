@@ -3,6 +3,7 @@ PATH
   specs:
     msolr (0.1)
       hamster
+      highline
       mongo (>= 1.3.1)
       rsolr
 
@@ -12,6 +13,7 @@ GEM
     bson (1.3.1)
     builder (3.0.0)
     hamster (0.4.2)
+    highline (1.6.2)
     mocha (0.9.12)
     mongo (1.3.1)
       bson (= 1.3.1)

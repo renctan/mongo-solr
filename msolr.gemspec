@@ -26,5 +26,6 @@ Gem::Specification.new do |s|
   s.add_dependency("rsolr")
   s.add_dependency("mongo", [">= 1.3.1"])
   s.add_dependency("hamster")
+  s.add_dependency("highline")
 end
 

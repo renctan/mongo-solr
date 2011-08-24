@@ -134,11 +134,6 @@ module MongoSolr
     #      cursor was updated.
     #
     # @raise [OplogException]
-    #
-    # Example:
-    # auth = { "users" => { :user => "root", :pwd => "root" },
-    #          "admin" => { :user => "admin", :pwd => "" } }
-    # solr.sync({ :db_pass => auth, :interval => 1 })
     def sync(&block)
       # Lock usage:
       # 1. @stop.mutex->@is_synching.mutex

@@ -26,14 +26,22 @@ class JSPluginWrapper
   #
   # @param db [String] The database name of the collection.
   # @param coll [String] The collection name.
-  def index_to_solr(db, coll = "")
+  # @param auth [Hash] Hash table containing the authentication details
+  def index_to_solr(db, coll = "", auth = {})
+    auth_line = ""
+
+    auth.each do |db_name, auth|
+      auth_line << "db.getSiblingDB(\"#{db_name}\").auth(\"#{auth[:user]}\", \"#{auth[:pwd]}\");"
+    end
+
     if coll.empty? then
       index_line = "db.getSiblingDB(\"#{db}\").solrIndex();"
     else
       index_line = "db.getSiblingDB(\"#{db}\").#{coll}.solrIndex();"
     end
 
-    code = <<JAVASCRIPT
+    code = auth_line
+    code << <<JAVASCRIPT
     MSolr.connect("#{SOLR_LOC}");
     #{index_line}
 JAVASCRIPT

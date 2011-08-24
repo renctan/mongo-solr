@@ -87,7 +87,7 @@ JAVASCRIPT
       mock = mock()
       mock.expects(:daemon_end).once
 
-      run_daemon("-p #{ShardManager::MONGOS_PORT}") do
+      run_daemon("-p #{ShardManager::MONGOS_PORT}") do |pio|
         @coll.insert({ SHARD_KEY => 7 })
         @coll.insert({ SHARD_KEY => 77 })
 
@@ -109,7 +109,7 @@ JAVASCRIPT
       mock = mock()
       mock.expects(:daemon_end).once
 
-      run_daemon("-p #{ShardManager::MONGOS_PORT}") do
+      run_daemon("-p #{ShardManager::MONGOS_PORT}") do |pio|
         @coll.remove(doc)
 
         solr_doc = nil
@@ -130,7 +130,7 @@ JAVASCRIPT
       mock = mock()
       mock.expects(:daemon_end).once
 
-      run_daemon("-p #{ShardManager::MONGOS_PORT}") do
+      run_daemon("-p #{ShardManager::MONGOS_PORT}") do |pio|
         midval = 60
         doc = { SHARD_KEY => midval }
         doc_id = @coll.insert(doc)

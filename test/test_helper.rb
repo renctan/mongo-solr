@@ -39,7 +39,8 @@ class MongoStarter
   def start
     if @pipe_io.nil? then
       FileUtils.mkdir_p DATA_DIR
-      cmd = "mongod --master --dbpath #{DATA_DIR} --port #{PORT} --logpath /dev/null --quiet"
+      cmd = "mongod --master --dbpath #{DATA_DIR} --port #{PORT} " + 
+        "--logpath /dev/null --quiet --auth"
       @pipe_io = IO.popen(cmd)
     end
   end
@@ -90,12 +91,13 @@ module TestHelper
   # Run the Mongo-Solr daemon and terminate it.
   #
   # @param args [String] The arguments to pass to the daemon.
-  # @param block [Proc] The procedure to execute before terminating the daemon.
+  # @param block [Proc(pio)] The procedure to execute before terminating the daemon.
+  #   The piped IO to the daemon process is also passed to the block.
   def run_daemon(args = "", &block)
-    daemon_pio = IO.popen("ruby #{PROJ_SRC_PATH}/../../bin/msolrd #{args} 2> /dev/null")
+    daemon_pio = IO.popen("ruby #{PROJ_SRC_PATH}/../../bin/msolrd #{args} > /dev/null", "r+")
 
     begin
-      yield if block_given?
+      yield daemon_pio if block_given?
     ensure
       Process.kill "TERM", daemon_pio.pid
       daemon_pio.close

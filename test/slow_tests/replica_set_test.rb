@@ -198,7 +198,7 @@ class ReplicaSetTest < Test::Unit::TestCase
       @js.index_to_solr(SMOKE_TEST_DB, @test_coll.name)
       @test_coll.insert(default_doc.merge({ :x => "hello" }), { :safe => true })
 
-      run_daemon("-d #{@conn_str} --err_interval 0") do
+      run_daemon("-d #{@conn_str} --err_interval 0") do |pio|
         solr_doc = nil
 
         # This block is just for synchronization purposes and is used to make
@@ -228,7 +228,7 @@ class ReplicaSetTest < Test::Unit::TestCase
       @js.index_to_solr(SMOKE_TEST_DB, @test_coll.name)
       @test_coll.insert(default_doc.merge({ :x => "hello" }), { :safe => true })
 
-      run_daemon("-d #{@conn_str} --err_interval 0") do
+      run_daemon("-d #{@conn_str} --err_interval 0") do |pio|
         solr_doc = nil
 
         # This block is just for synchronization purposes and is used to make

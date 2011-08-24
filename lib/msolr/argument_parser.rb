@@ -1,5 +1,7 @@
+require "rubygems"
 require "optparse"
 require "ostruct"
+require "highline"
 require_relative "../version"
 
 module MongoSolr
@@ -113,26 +115,34 @@ module MongoSolr
           exit
         end
 
-#        opts.separator ""
-#        opts.on("-a", "--auth FILE_PATH",
-#                "The file that contains authentication",
-#                "credentials to the databases. The file",
-#                "should have separate entries for each",
-#                "database in one line with database",
-#                "name, user name and password separated",
-#                "by a comma. Sample file contents:",
-#                " ",
-#                "admin,root_user,root_password",
-#                "local_db,user,strong_password",
-#                " ",
-#                "Note that spaces are valid characters in",
-#                "user name and passwords so space characters",
-#                "will not be ignored in the file. There are",
-#                "currently issues for username and password",
-#                "usernames that contains the comma (,)",
-#                "character.") do |path|
-#          options.auth = load_auth_file(path)
-#        end
+        opts.separator ""
+        opts.on("--iauth",
+                "Interactive authentication. A more secured ",
+                "alternative to --auth. Prompts the admin ",
+                "username and password.") do
+          options.auth = prompt_password("admin")
+        end
+
+        opts.separator ""
+        opts.on("-a", "--auth FILE_PATH",
+                "The file that contains authentication",
+                "credentials to the databases. The file",
+                "should have separate entries for each",
+                "database in one line with database",
+                "name, user name and password separated",
+                "by a comma. Sample file contents:",
+                " ",
+                "admin,root_user,root_password",
+                "local_db,user,strong_password",
+                " ",
+                "Note that spaces are valid characters in",
+                "user name and passwords so space characters",
+                "will not be ignored in the file. There are",
+                "currently issues for username and password",
+                "usernames that contains the comma (,)",
+                "character.") do |path|
+          options.auth = load_auth_file(path)
+        end
 
         yield opts, options if block_given?
 
@@ -150,12 +160,14 @@ module MongoSolr
     ############################################################################
     private
 
-    # Build a hash structure from the contents of an authentication file that conforms with
-    # the formatting for the opt[:db_pass] parameter for SolrSynchronizer#sync.
+    # Builds a hash structure from the contents of an authentication file that contains
+    # the username and passwords for each database.
     #
     # @param file_path [String] the path of the authentication file.
     #
     # @return [Hash] the Hash object.
+    #
+    # @see Util::authenticate_to_db
     def self.load_auth_file(file_path)
       auth_data = {}
 
@@ -169,6 +181,23 @@ module MongoSolr
       end
 
       return auth_data
+    end
+
+    # Prompts the user the username and password of a database.
+    #
+    # @param db_name [String] The name of the database to authenticate.
+    #
+    # @return [Hash] the Hash object containing the username and password.
+    #
+    # @see Util::authenticate_to_db
+    def self.prompt_password(db_name)
+      print("Please enter a username for #{db_name} db: ")
+      user = gets
+
+      hl = HighLine.new
+      pwd = hl.ask("Password: ") { |q| q.echo = "*" }
+
+      return { db_name => { :user => user.strip, :pwd => pwd.strip }}
     end
   end
 end
